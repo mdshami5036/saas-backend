@@ -1,0 +1,105 @@
+// Prisma Schema for Multi-Tenant SaaS Auto Print Platform
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Admin {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("SUPER_ADMIN")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Tenant {
+  id                 String   @id @default(uuid())
+  name               String
+  slug               String   @unique
+  email              String   @unique
+  passwordHash       String
+  phone              String?
+  apiKey             String   @unique
+  agentToken         String   @unique
+  status             String   @default("ACTIVE")
+  bwPricePerPage     Float    @default(2.0)
+  colorPricePerPage  Float    @default(10.0)
+  razorpayKeyId      String?  // Cyber Cafe's own Razorpay Key ID
+  razorpayKeySecret  String?  // Cyber Cafe's own Razorpay Key Secret
+  customWebsiteUrl   String?
+  qrCodeUrl          String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  devices   Device[]
+  printJobs PrintJob[]
+  payments  Payment[]
+}
+
+model Device {
+  id               String   @id @default(uuid())
+  tenantId         String
+  deviceId         String   @unique
+  hardwareHash     String
+  deviceName       String   @default("Main Counter Laptop")
+  selectedPrinter  String?
+  availablePrinters String?  @default("[]")
+  isOnline         Boolean  @default(false)
+  lastSeenAt       DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  printJobs PrintJob[]
+}
+
+model PrintJob {
+  id            String    @id @default(uuid())
+  tenantId      String
+  deviceId      String?
+  customerName  String    @default("Guest Customer")
+  customerPhone String?
+  originalName  String
+  pdfFileName   String
+  pdfPath       String
+  totalPages    Int
+  pagesToPrint  String
+  copies        Int       @default(1)
+  colorMode     String    @default("BW")
+  totalPrice    Float
+  paymentStatus String    @default("PENDING")
+  jobStatus     String    @default("PENDING")
+  printerName   String?
+  errorMessage  String?
+  createdAt     DateTime  @default(now())
+  printedAt     DateTime?
+  expiresAt     DateTime
+
+  tenant  Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  device  Device?  @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  payment Payment?
+}
+
+model Payment {
+  id                String   @id @default(uuid())
+  tenantId          String
+  printJobId        String   @unique
+  amount            Float
+  currency          String   @default("INR")
+  status            String   @default("PENDING")
+  razorpayOrderId   String   @unique
+  razorpayPaymentId String?
+  razorpaySignature String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  printJob PrintJob @relation(fields: [printJobId], references: [id], onDelete: Cascade)
+}
