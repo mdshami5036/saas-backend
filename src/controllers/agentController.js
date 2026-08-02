@@ -48,10 +48,11 @@ async function pollJobs(req, res) {
   try {
     const tenant = req.tenant;
 
-    // Find pending jobs waiting for dispatch
+    // Find pending jobs waiting for dispatch (STRICT: paymentStatus = SUCCESS)
     const pendingJob = await prisma.printJob.findFirst({
       where: {
         tenantId: tenant.id,
+        paymentStatus: 'SUCCESS',
         jobStatus: 'SENT_TO_AGENT',
       },
       orderBy: { createdAt: 'asc' },
@@ -61,7 +62,9 @@ async function pollJobs(req, res) {
       return res.json({ success: true, hasJob: false, job: null });
     }
 
-    const baseUrl = process.env.BASE_SERVER_URL || 'http://localhost:5000';
+    const host = req.get('host');
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const baseUrl = process.env.BASE_SERVER_URL || `${protocol}://${host}`;
 
     return res.json({
       success: true,
@@ -75,6 +78,7 @@ async function pollJobs(req, res) {
         colorMode: pendingJob.colorMode,
         totalPages: pendingJob.totalPages,
         printerName: pendingJob.printerName,
+        paymentStatus: pendingJob.paymentStatus,
       },
     });
   } catch (error) {
@@ -88,11 +92,11 @@ async function downloadJobFile(req, res) {
     const { id } = req.params;
 
     const job = await prisma.printJob.findFirst({
-      where: { id, tenantId: tenant.id },
+      where: { id, tenantId: tenant.id, paymentStatus: 'SUCCESS' },
     });
 
     if (!job || !job.pdfPath) {
-      return res.status(404).json({ success: false, error: 'Print job PDF not found' });
+      return res.status(404).json({ success: false, error: 'Paid print job PDF not found' });
     }
 
     if (!fs.existsSync(job.pdfPath)) {
@@ -144,11 +148,15 @@ async function updateJobStatusHttp(req, res) {
 }
 
 async function checkVersion(req, res) {
+  const host = req.get('host');
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const baseUrl = process.env.BASE_SERVER_URL || `${protocol}://${host}`;
+
   return res.json({
     success: true,
     version: '1.0.0',
     minVersion: '1.0.0',
-    downloadUrl: `${process.env.BASE_SERVER_URL || 'http://localhost:5000'}/downloads/PrintAgent.exe`,
+    downloadUrl: `${baseUrl}/downloads/PrintAgent.exe`,
     mandatory: false,
   });
 }

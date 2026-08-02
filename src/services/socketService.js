@@ -166,9 +166,15 @@ function getIO() {
 function dispatchJobToAgent(tenantId, job, pdfBuffer = null) {
   if (!ioInstance) return false;
 
-  console.log(`[Zero-Storage Socket] Dispatching in-memory print job ${job.id} to Tenant ${tenantId}`);
+  // STRICT SECURITY CHECK: NEVER DISPATCH UNPAID JOBS
+  if (job.paymentStatus !== 'SUCCESS') {
+    console.error(`[Security Violation] Attempted to dispatch unpaid job ${job.id} (paymentStatus: ${job.paymentStatus}). Aborting.`);
+    return false;
+  }
 
-  const baseUrl = process.env.BASE_SERVER_URL || 'http://localhost:5000';
+  console.log(`[Zero-Storage Socket] Dispatching paid in-memory print job ${job.id} to Tenant ${tenantId}`);
+
+  const baseUrl = process.env.BASE_SERVER_URL || 'https://saas-backend-production-5c3e.up.railway.app';
 
   ioInstance.to(`tenant:${tenantId}`).emit('job:new_print', {
     jobId: job.id,
@@ -180,6 +186,7 @@ function dispatchJobToAgent(tenantId, job, pdfBuffer = null) {
     colorMode: job.colorMode,
     totalPages: job.totalPages,
     printerName: job.printerName,
+    paymentStatus: job.paymentStatus,
   });
   return true;
 }

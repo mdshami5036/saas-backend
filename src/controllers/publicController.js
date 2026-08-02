@@ -51,18 +51,27 @@ function parsePageRange(rangeStr, maxPages) {
 }
 
 async function getCafePublicInfo(req, res) {
-  const tenant = req.tenant;
-  return res.json({
-    success: true,
-    cafe: {
-      id: tenant.id,
-      name: tenant.name,
-      slug: tenant.slug,
-      bwPricePerPage: tenant.bwPricePerPage,
-      colorPricePerPage: tenant.colorPricePerPage,
-      razorpayKeyId: tenant.razorpayKeyId || process.env.RAZORPAY_KEY_ID || '',
-    },
-  });
+  try {
+    const tenant = req.tenant;
+    if (!tenant) {
+      return res.status(404).json({ success: false, error: 'Cyber Cafe not found' });
+    }
+
+    return res.json({
+      success: true,
+      cafe: {
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        bwPricePerPage: tenant.bwPricePerPage,
+        colorPricePerPage: tenant.colorPricePerPage,
+        razorpayKeyId: tenant.razorpayKeyId || '',
+        hasPaymentConfigured: !!(tenant.razorpayKeyId && tenant.razorpayKeySecret),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Failed to fetch cafe info' });
+  }
 }
 
 async function uploadPdfInMemory(req, res) {
@@ -113,6 +122,10 @@ async function uploadPdfInMemory(req, res) {
 async function createOrder(req, res) {
   try {
     const tenant = req.tenant;
+    if (!tenant) {
+      return res.status(404).json({ success: false, error: 'Cyber Cafe not found' });
+    }
+
     const {
       customerName,
       customerPhone,
@@ -128,17 +141,30 @@ async function createOrder(req, res) {
       return res.status(400).json({ success: false, error: 'File details missing' });
     }
 
+    // Require per-tenant Razorpay Credentials
+    if (!tenant.razorpayKeyId || !tenant.razorpayKeySecret) {
+      return res.status(400).json({
+        success: false,
+        error: 'This Cyber Cafe has not configured their Razorpay payment gateway yet. Please contact the cafe owner.',
+      });
+    }
+
     const maxPages = parseInt(totalPages, 10);
     const selectedPagesCount = parsePageRange(pagesToPrint, maxPages);
     const numCopies = parseInt(copies || 1, 10);
     const isColor = colorMode === 'COLOR';
 
+    // Calculate strictly using THIS CAFE's pricing
     const pricePerPage = isColor ? tenant.colorPricePerPage : tenant.bwPricePerPage;
     const totalPrice = selectedPagesCount * numCopies * pricePerPage;
 
+    if (isNaN(totalPrice) || totalPrice <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid print price calculation' });
+    }
+
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Create PrintJob in DB (No disk path stored)
+    // Create PrintJob in DB with PENDING status (NO PRINTING BEFORE PAYMENT)
     const printJob = await prisma.printJob.create({
       data: {
         tenantId: tenant.id,
@@ -158,32 +184,24 @@ async function createOrder(req, res) {
       },
     });
 
-    // Per-Tenant Razorpay Merchant Account setup
-    const activeKeyId = tenant.razorpayKeyId || process.env.RAZORPAY_KEY_ID || 'rzp_test_samplekey123';
-    const activeKeySecret = tenant.razorpayKeySecret || process.env.RAZORPAY_KEY_SECRET || 'samplekeysecret123';
+    // Instantiate Razorpay strictly using THIS CAFE's key & secret
+    const cafeRazorpay = new Razorpay({
+      key_id: tenant.razorpayKeyId,
+      key_secret: tenant.razorpayKeySecret,
+    });
 
-    let razorpayOrder;
-    try {
-      const cafeRazorpay = new Razorpay({
-        key_id: activeKeyId,
-        key_secret: activeKeySecret,
-      });
+    const options = {
+      amount: Math.round(totalPrice * 100), // Amount in paise
+      currency: 'INR',
+      receipt: `job_${printJob.id.substring(0, 10)}`,
+      notes: {
+        cafeId: tenant.id,
+        cafeSlug: tenant.slug,
+        jobId: printJob.id,
+      },
+    };
 
-      const options = {
-        amount: Math.round(totalPrice * 100),
-        currency: 'INR',
-        receipt: `job_${printJob.id.substring(0, 10)}`,
-      };
-
-      razorpayOrder = await cafeRazorpay.orders.create(options);
-    } catch (rzpErr) {
-      console.warn('Razorpay order create fallback to simulation mode:', rzpErr.message);
-      razorpayOrder = {
-        id: 'order_mock_' + crypto.randomBytes(8).toString('hex'),
-        amount: Math.round(totalPrice * 100),
-        currency: 'INR',
-      };
-    }
+    const razorpayOrder = await cafeRazorpay.orders.create(options);
 
     await prisma.payment.create({
       data: {
@@ -203,7 +221,7 @@ async function createOrder(req, res) {
         razorpayOrderId: razorpayOrder.id,
         amount: totalPrice,
         currency: 'INR',
-        keyId: activeKeyId,
+        keyId: tenant.razorpayKeyId,
         cafeName: tenant.name,
         calculatedPages: selectedPagesCount,
         copies: numCopies,
@@ -211,6 +229,7 @@ async function createOrder(req, res) {
       },
     });
   } catch (error) {
+    console.error('Create order error:', error);
     return res.status(500).json({ success: false, error: 'Failed to create payment order', details: error.message });
   }
 }
@@ -219,8 +238,8 @@ async function verifyPayment(req, res) {
   try {
     const { jobId, razorpayOrderId, razorpayPaymentId, razorpaySignature } = req.body;
 
-    if (!jobId) {
-      return res.status(400).json({ success: false, error: 'Payment details incomplete' });
+    if (!jobId || !razorpayPaymentId || !razorpaySignature) {
+      return res.status(400).json({ success: false, error: 'Missing required payment verification parameters' });
     }
 
     const job = await prisma.printJob.findUnique({
@@ -232,7 +251,45 @@ async function verifyPayment(req, res) {
       return res.status(404).json({ success: false, error: 'Print job not found' });
     }
 
-    // Update job status to SENT_TO_AGENT
+    const tenant = job.tenant;
+    if (!tenant || !tenant.razorpayKeySecret) {
+      return res.status(400).json({ success: false, error: 'Cafe payment credentials unavailable for verification' });
+    }
+
+    const paymentRecord = await prisma.payment.findUnique({
+      where: { printJobId: jobId },
+    });
+
+    const orderIdToVerify = razorpayOrderId || (paymentRecord ? paymentRecord.razorpayOrderId : null);
+
+    if (!orderIdToVerify) {
+      return res.status(400).json({ success: false, error: 'Razorpay Order ID missing for verification' });
+    }
+
+    // Strictly verify Razorpay HMAC SHA256 Signature
+    const bodyToSign = `${orderIdToVerify}|${razorpayPaymentId}`;
+    const expectedSignature = crypto
+      .createHmac('sha256', tenant.razorpayKeySecret)
+      .update(bodyToSign)
+      .digest('hex');
+
+    if (expectedSignature !== razorpaySignature) {
+      console.warn(`[Security Alert] Payment signature mismatch for Job #${jobId}! Expected: ${expectedSignature}, Received: ${razorpaySignature}`);
+
+      // Mark payment & job as FAILED
+      await prisma.printJob.update({
+        where: { id: jobId },
+        data: { paymentStatus: 'FAILED', jobStatus: 'CANCELLED', errorMessage: 'Payment signature verification failed' },
+      });
+      await prisma.payment.updateMany({
+        where: { printJobId: jobId },
+        data: { status: 'FAILED', razorpayPaymentId, razorpaySignature },
+      });
+
+      return res.status(400).json({ success: false, error: 'Payment signature verification failed' });
+    }
+
+    // Signature matches -> Update job status to SUCCESS and SENT_TO_AGENT
     const updatedJob = await prisma.printJob.update({
       where: { id: jobId },
       data: {
@@ -245,8 +302,8 @@ async function verifyPayment(req, res) {
       where: { printJobId: jobId },
       data: {
         status: 'SUCCESS',
-        razorpayPaymentId: razorpayPaymentId || `pay_${Date.now()}`,
-        razorpaySignature: razorpaySignature || 'signature_verified',
+        razorpayPaymentId,
+        razorpaySignature,
       },
     });
 
@@ -254,14 +311,14 @@ async function verifyPayment(req, res) {
     const memoryRecord = getMemoryPdfBuffer(updatedJob.pdfFileName);
     const pdfBuffer = memoryRecord ? memoryRecord.buffer : null;
 
-    // Dispatch directly via WebSocket & Polling to PrintAgent.exe
+    // Dispatch ONLY after successful payment verification!
     const dispatched = dispatchJobToAgent(updatedJob.tenantId, updatedJob, pdfBuffer);
 
-    console.log(`[Payment Verified] Job #${jobId} confirmed. Sent directly to PrintAgent.exe!`);
+    console.log(`[Payment Verified] Signature valid! Job #${jobId} confirmed & dispatched to PrintAgent.exe`);
 
     return res.json({
       success: true,
-      message: 'Payment confirmed! PDF dispatched directly to PrintAgent.exe.',
+      message: 'Payment verified successfully! Print job dispatched.',
       job: {
         id: updatedJob.id,
         status: updatedJob.jobStatus,
