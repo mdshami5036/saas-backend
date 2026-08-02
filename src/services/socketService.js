@@ -79,10 +79,13 @@ function initSocketServer(server) {
     socket.on('agent:printers', async (data) => {
       try {
         const { printers, selectedPrinter } = data;
+        const printersJson = Array.isArray(printers)
+          ? JSON.stringify(printers)
+          : typeof printers === 'string' ? printers : null;
         await prisma.device.update({
           where: { deviceId },
           data: {
-            availablePrinters: printers || [],
+            availablePrinters: printersJson,
             selectedPrinter: selectedPrinter || null,
             lastSeenAt: new Date(),
           },

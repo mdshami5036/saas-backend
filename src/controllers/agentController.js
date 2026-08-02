@@ -13,13 +13,17 @@ async function registerDevice(req, res) {
 
     const boundDeviceId = deviceId || `dev_${Date.now()}`;
 
+    const printersJson = Array.isArray(availablePrinters)
+      ? JSON.stringify(availablePrinters)
+      : typeof availablePrinters === 'string' ? availablePrinters : null;
+
     const device = await prisma.device.upsert({
       where: { deviceId: boundDeviceId },
       update: {
         isOnline: true,
         lastSeenAt: new Date(),
-        selectedPrinter: selectedPrinter || undefined,
-        availablePrinters: availablePrinters || undefined,
+        selectedPrinter: selectedPrinter || null,
+        availablePrinters: printersJson,
       },
       create: {
         tenantId: tenant.id,
@@ -27,7 +31,7 @@ async function registerDevice(req, res) {
         hardwareHash,
         deviceName: deviceName || 'Windows Agent Laptop',
         selectedPrinter: selectedPrinter || null,
-        availablePrinters: availablePrinters || [],
+        availablePrinters: printersJson,
         isOnline: true,
       },
     });
