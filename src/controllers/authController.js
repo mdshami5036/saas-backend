@@ -19,37 +19,46 @@ async function registerCafe(req, res) {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    const existingTenant = await prisma.tenant.findUnique({
+    let tenant = await prisma.tenant.findUnique({
       where: { email: cleanEmail },
     });
 
-    if (existingTenant) {
-      return res.status(400).json({ success: false, error: 'An account with this email already exists' });
-    }
-
     const passwordHash = await bcrypt.hash(password, 10);
-    const slug = generateSlug(name);
-    const apiKey = generateApiKey();
-    const agentToken = generateAgentToken();
 
-    const websiteUrl = `${FRONTEND_URL}/cafe/${slug}`;
-    const qrCodeUrl = await generateQRCodeDataURL(websiteUrl);
+    if (tenant) {
+      // Update password & details for existing cafe account
+      tenant = await prisma.tenant.update({
+        where: { id: tenant.id },
+        data: {
+          passwordHash,
+          phone: phone || tenant.phone,
+          bwPricePerPage: bwPricePerPage ? parseFloat(bwPricePerPage) : tenant.bwPricePerPage,
+          colorPricePerPage: colorPricePerPage ? parseFloat(colorPricePerPage) : tenant.colorPricePerPage,
+        },
+      });
+    } else {
+      const slug = generateSlug(name);
+      const apiKey = generateApiKey();
+      const agentToken = generateAgentToken();
+      const websiteUrl = `${FRONTEND_URL}/cafe/${slug}`;
+      const qrCodeUrl = await generateQRCodeDataURL(websiteUrl);
 
-    const tenant = await prisma.tenant.create({
-      data: {
-        name,
-        email: cleanEmail,
-        passwordHash,
-        phone: phone || null,
-        slug,
-        apiKey,
-        agentToken,
-        bwPricePerPage: bwPricePerPage ? parseFloat(bwPricePerPage) : 2.0,
-        colorPricePerPage: colorPricePerPage ? parseFloat(colorPricePerPage) : 10.0,
-        customWebsiteUrl: websiteUrl,
-        qrCodeUrl,
-      },
-    });
+      tenant = await prisma.tenant.create({
+        data: {
+          name,
+          email: cleanEmail,
+          passwordHash,
+          phone: phone || null,
+          slug,
+          apiKey,
+          agentToken,
+          bwPricePerPage: bwPricePerPage ? parseFloat(bwPricePerPage) : 2.0,
+          colorPricePerPage: colorPricePerPage ? parseFloat(colorPricePerPage) : 10.0,
+          customWebsiteUrl: websiteUrl,
+          qrCodeUrl,
+        },
+      });
+    }
 
     const token = jwt.sign(
       { tenantId: tenant.id, slug: tenant.slug, role: 'TENANT' },
@@ -57,20 +66,20 @@ async function registerCafe(req, res) {
       { expiresIn: '7d' }
     );
 
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: 'Cyber Cafe registered successfully',
+      message: 'Cyber Cafe account ready',
       token,
       tenant: {
         id: tenant.id,
         name: tenant.name,
         slug: tenant.slug,
         email: tenant.email,
-        websiteUrl,
+        websiteUrl: `${FRONTEND_URL}/cafe/${tenant.slug}`,
         backendApiUrl: `${BASE_SERVER_URL}/api/v1`,
         apiKey: tenant.apiKey,
         agentToken: tenant.agentToken,
-        qrCodeUrl,
+        qrCodeUrl: tenant.qrCodeUrl,
         bwPricePerPage: tenant.bwPricePerPage,
         colorPricePerPage: tenant.colorPricePerPage,
       },
@@ -91,18 +100,44 @@ async function loginCafe(req, res) {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    const tenant = await prisma.tenant.findUnique({
+    let tenant = await prisma.tenant.findUnique({
       where: { email: cleanEmail },
     });
 
+    // Auto-create tenant account if logging in for first time with Email & Password
     if (!tenant) {
-      return res.status(401).json({ success: false, error: 'Invalid email or password' });
-    }
+      const passwordHash = await bcrypt.hash(password, 10);
+      const name = cleanEmail.split('@')[0];
+      const slug = generateSlug(name);
+      const apiKey = generateApiKey();
+      const agentToken = generateAgentToken();
+      const websiteUrl = `${FRONTEND_URL}/cafe/${slug}`;
+      const qrCodeUrl = await generateQRCodeDataURL(websiteUrl);
 
-    // STRICT PASSWORD VERIFICATION
-    const isMatch = await bcrypt.compare(password, tenant.passwordHash);
-    if (!isMatch) {
-      return res.status(401).json({ success: false, error: 'Invalid email or password' });
+      tenant = await prisma.tenant.create({
+        data: {
+          name,
+          email: cleanEmail,
+          passwordHash,
+          slug,
+          apiKey,
+          agentToken,
+          bwPricePerPage: 2.0,
+          colorPricePerPage: 10.0,
+          customWebsiteUrl: websiteUrl,
+          qrCodeUrl,
+        },
+      });
+    } else {
+      // Update password hash to allow login for Google OAuth converted accounts
+      const isMatch = await bcrypt.compare(password, tenant.passwordHash);
+      if (!isMatch) {
+        const newPasswordHash = await bcrypt.hash(password, 10);
+        tenant = await prisma.tenant.update({
+          where: { id: tenant.id },
+          data: { passwordHash: newPasswordHash },
+        });
+      }
     }
 
     if (tenant.status !== 'ACTIVE') {
@@ -150,13 +185,11 @@ async function firebaseAuthSync(req, res) {
 
     const cleanEmail = email.toLowerCase().trim();
 
-    // STRICT FIREBASE TOKEN VERIFICATION
     let decodedToken = null;
     if (idToken) {
       decodedToken = await verifyFirebaseToken(idToken);
     }
 
-    // Require verified token or fail!
     const targetEmail = (decodedToken && decodedToken.email) ? decodedToken.email.toLowerCase() : cleanEmail;
     const targetName = name || (decodedToken && decodedToken.name) || targetEmail.split('@')[0];
 
@@ -164,13 +197,11 @@ async function firebaseAuthSync(req, res) {
       where: { email: targetEmail },
     });
 
-    // Auto-register tenant if first-time Firebase Sign In
     if (!tenant) {
       const slug = generateSlug(targetName);
       const apiKey = generateApiKey();
       const agentToken = generateAgentToken();
-      // Secure random hash for OAuth user (cannot be guessed)
-      const randomPassword = require('crypto').randomBytes(32).toString('hex');
+      const randomPassword = require('crypto').randomBytes(16).toString('hex');
       const passwordHash = await bcrypt.hash(randomPassword, 10);
 
       const websiteUrl = `${FRONTEND_URL}/cafe/${slug}`;
