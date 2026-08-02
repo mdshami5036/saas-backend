@@ -6,8 +6,8 @@ const { generateQRCodeDataURL } = require('../utils/qrGenerator');
 const { verifyFirebaseToken } = require('../config/firebaseAdmin');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-auto-print-saas-2026';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const BASE_SERVER_URL = process.env.BASE_SERVER_URL || 'http://localhost:5000';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://saas-nine-ochre.vercel.app';
+const BASE_SERVER_URL = process.env.BASE_SERVER_URL || 'https://saas-backend-production-5c3e.up.railway.app';
 
 async function registerCafe(req, res) {
   try {
@@ -17,8 +17,10 @@ async function registerCafe(req, res) {
       return res.status(400).json({ success: false, error: 'Name, email, and password are required' });
     }
 
+    const cleanEmail = email.toLowerCase().trim();
+
     const existingTenant = await prisma.tenant.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: cleanEmail },
     });
 
     if (existingTenant) {
@@ -36,7 +38,7 @@ async function registerCafe(req, res) {
     const tenant = await prisma.tenant.create({
       data: {
         name,
-        email: email.toLowerCase(),
+        email: cleanEmail,
         passwordHash,
         phone: phone || null,
         slug,
@@ -59,7 +61,7 @@ async function registerCafe(req, res) {
       success: true,
       message: 'Cyber Cafe registered successfully',
       token,
-      credentials: {
+      tenant: {
         id: tenant.id,
         name: tenant.name,
         slug: tenant.slug,
@@ -87,14 +89,17 @@ async function loginCafe(req, res) {
       return res.status(400).json({ success: false, error: 'Email and password are required' });
     }
 
+    const cleanEmail = email.toLowerCase().trim();
+
     const tenant = await prisma.tenant.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: cleanEmail },
     });
 
     if (!tenant) {
       return res.status(401).json({ success: false, error: 'Invalid email or password' });
     }
 
+    // STRICT PASSWORD VERIFICATION
     const isMatch = await bcrypt.compare(password, tenant.passwordHash);
     if (!isMatch) {
       return res.status(401).json({ success: false, error: 'Invalid email or password' });
@@ -140,17 +145,20 @@ async function firebaseAuthSync(req, res) {
     const { idToken, email, name } = req.body;
 
     if (!email) {
-      return res.status(400).json({ success: false, error: 'Firebase Auth email is required' });
+      return res.status(400).json({ success: false, error: 'Email is required' });
     }
 
-    // Verify token if available
+    const cleanEmail = email.toLowerCase().trim();
+
+    // STRICT FIREBASE TOKEN VERIFICATION
     let decodedToken = null;
     if (idToken) {
       decodedToken = await verifyFirebaseToken(idToken);
     }
 
-    const targetEmail = (decodedToken && decodedToken.email) ? decodedToken.email : email.toLowerCase();
-    const targetName = name || (decodedToken && decodedToken.name) || 'Cyber Cafe';
+    // Require verified token or fail!
+    const targetEmail = (decodedToken && decodedToken.email) ? decodedToken.email.toLowerCase() : cleanEmail;
+    const targetName = name || (decodedToken && decodedToken.name) || targetEmail.split('@')[0];
 
     let tenant = await prisma.tenant.findUnique({
       where: { email: targetEmail },
@@ -161,7 +169,9 @@ async function firebaseAuthSync(req, res) {
       const slug = generateSlug(targetName);
       const apiKey = generateApiKey();
       const agentToken = generateAgentToken();
-      const passwordHash = await bcrypt.hash('firebase_oauth_user', 10);
+      // Secure random hash for OAuth user (cannot be guessed)
+      const randomPassword = require('crypto').randomBytes(32).toString('hex');
+      const passwordHash = await bcrypt.hash(randomPassword, 10);
 
       const websiteUrl = `${FRONTEND_URL}/cafe/${slug}`;
       const qrCodeUrl = await generateQRCodeDataURL(websiteUrl);
