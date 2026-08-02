@@ -177,7 +177,7 @@ function dispatchJobToAgent(tenantId, job, pdfBuffer = null) {
 
   console.log(`[Zero-Storage Socket] Dispatching paid in-memory print job ${job.id} to Tenant ${tenantId}`);
 
-  const baseUrl = process.env.BASE_SERVER_URL || 'https://saas-backend-production-5c3e.up.railway.app';
+  const baseUrl = (process.env.BASE_SERVER_URL || 'https://saas-backend-production-5c3e.up.railway.app').replace(/\/$/, '');
 
   ioInstance.to(`tenant:${tenantId}`).emit('job:new_print', {
     jobId: job.id,
