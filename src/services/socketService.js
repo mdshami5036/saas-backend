@@ -59,6 +59,7 @@ function initSocketServer(server) {
       await prisma.device.upsert({
         where: { deviceId },
         update: {
+          tenantId,
           isOnline: true,
           lastSeenAt: new Date(),
           hardwareHash: socket.hardwareHash,

@@ -20,6 +20,7 @@ async function registerDevice(req, res) {
     const device = await prisma.device.upsert({
       where: { deviceId: boundDeviceId },
       update: {
+        tenantId: tenant.id,
         isOnline: true,
         lastSeenAt: new Date(),
         selectedPrinter: selectedPrinter || null,
