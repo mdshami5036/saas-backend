@@ -39,12 +39,12 @@ function startCleanupWorker() {
         }
       }
 
-      // Check offline devices (lastSeenAt older than 2 minutes)
-      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+      // Check offline devices (lastSeenAt older than 3 minutes)
+      const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000);
       await prisma.device.updateMany({
         where: {
           isOnline: true,
-          lastSeenAt: { lt: twoMinutesAgo },
+          lastSeenAt: { lt: threeMinutesAgo },
         },
         data: { isOnline: false },
       });
