@@ -100,16 +100,26 @@ async function downloadJobFile(req, res) {
       where: { id, tenantId: tenant.id, paymentStatus: 'SUCCESS' },
     });
 
-    if (!job || !job.pdfPath) {
-      return res.status(404).json({ success: false, error: 'Paid print job PDF not found' });
+    if (!job) {
+      return res.status(404).json({ success: false, error: 'Paid print job not found' });
     }
 
-    if (!fs.existsSync(job.pdfPath)) {
-      return res.status(410).json({ success: false, error: 'PDF file has expired or was already deleted' });
+    // Check zero-storage RAM memory buffer first
+    const publicCtrl = require('./publicController');
+    const memoryRecord = publicCtrl.getMemoryPdfBuffer(job.pdfFileName);
+
+    if (memoryRecord && memoryRecord.buffer) {
+      res.contentType('application/pdf');
+      return res.send(memoryRecord.buffer);
     }
 
-    res.contentType('application/pdf');
-    return res.sendFile(path.resolve(job.pdfPath));
+    // Disk fallback if pdfPath exists
+    if (job.pdfPath && fs.existsSync(job.pdfPath)) {
+      res.contentType('application/pdf');
+      return res.sendFile(path.resolve(job.pdfPath));
+    }
+
+    return res.status(404).json({ success: false, error: 'PDF file expired or unavailable' });
   } catch (error) {
     return res.status(500).json({ success: false, error: 'File download error' });
   }
