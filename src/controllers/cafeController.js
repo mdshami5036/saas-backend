@@ -105,12 +105,19 @@ async function updateRazorpayCredentials(req, res) {
     const tenant = req.tenant;
     const { razorpayKeyId, razorpayKeySecret } = req.body;
 
+    const dataToUpdate = {};
+
+    if (razorpayKeyId !== undefined && razorpayKeyId !== null) {
+      dataToUpdate.razorpayKeyId = razorpayKeyId.trim() || null;
+    }
+
+    if (razorpayKeySecret && razorpayKeySecret.trim().length > 0) {
+      dataToUpdate.razorpayKeySecret = razorpayKeySecret.trim();
+    }
+
     const updated = await prisma.tenant.update({
       where: { id: tenant.id },
-      data: {
-        razorpayKeyId: razorpayKeyId ? razorpayKeyId.trim() : null,
-        razorpayKeySecret: razorpayKeySecret ? razorpayKeySecret.trim() : null,
-      },
+      data: dataToUpdate,
     });
 
     return res.json({
@@ -122,7 +129,8 @@ async function updateRazorpayCredentials(req, res) {
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Failed to update Razorpay credentials' });
+    console.error('Update Razorpay Error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update Razorpay credentials', details: error.message });
   }
 }
 
