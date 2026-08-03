@@ -2,7 +2,7 @@ const prisma = require('../config/db');
 
 async function resolveTenantBySlug(req, res, next) {
   try {
-    const slug = req.params.slug || req.query.slug;
+    const slug = req.params.slug || req.query.slug || (req.body && req.body.slug);
     if (!slug) {
       return res.status(400).json({ success: false, error: 'Cyber Cafe slug is required' });
     }
