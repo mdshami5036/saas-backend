@@ -185,6 +185,17 @@ async function createOrder(req, res) {
       },
     });
 
+    const options = {
+      amount: Math.round(totalPrice * 100), // Amount in paise
+      currency: 'INR',
+      receipt: `job_${printJob.id.substring(0, 10)}`,
+      notes: {
+        cafeId: tenant.id,
+        cafeSlug: tenant.slug,
+        jobId: printJob.id,
+      },
+    };
+
     let razorpayOrder = null;
     let finalKeyId = rzpKeyId;
 
