@@ -129,14 +129,9 @@ async function loginCafe(req, res) {
         },
       });
     } else {
-      // Update password hash to allow login for Google OAuth converted accounts
       const isMatch = await bcrypt.compare(password, tenant.passwordHash);
       if (!isMatch) {
-        const newPasswordHash = await bcrypt.hash(password, 10);
-        tenant = await prisma.tenant.update({
-          where: { id: tenant.id },
-          data: { passwordHash: newPasswordHash },
-        });
+        return res.status(401).json({ success: false, error: 'Invalid email or password' });
       }
     }
 
