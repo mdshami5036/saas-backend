@@ -352,9 +352,7 @@ async function serveMemoryPdfFile(req, res) {
     }
 
     res.contentType('application/pdf');
-    res.send(memoryRecord.buffer);
-
-    clearMemoryPdfBuffer(fileId);
+    return res.send(memoryRecord.buffer);
   } catch (error) {
     return res.status(500).json({ success: false, error: 'Memory PDF stream error' });
   }

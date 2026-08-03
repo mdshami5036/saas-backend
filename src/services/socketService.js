@@ -176,6 +176,18 @@ function dispatchJobToAgent(tenantId, job, pdfBuffer = null) {
     return false;
   }
 
+  // Always retrieve RAM buffer if not explicitly passed
+  let bufferToSend = pdfBuffer;
+  if (!bufferToSend && job.pdfFileName) {
+    try {
+      const publicCtrl = require('../controllers/publicController');
+      const mem = publicCtrl.getMemoryPdfBuffer(job.pdfFileName);
+      if (mem && mem.buffer) bufferToSend = mem.buffer;
+    } catch (e) {
+      // silent
+    }
+  }
+
   console.log(`[Zero-Storage Socket] Dispatching paid in-memory print job ${job.id} to Tenant ${tenantId}`);
 
   const baseUrl = (process.env.BASE_SERVER_URL || 'https://saas-backend-production-5c3e.up.railway.app').replace(/\/$/, '');
@@ -184,7 +196,7 @@ function dispatchJobToAgent(tenantId, job, pdfBuffer = null) {
     jobId: job.id,
     customerName: job.customerName,
     downloadUrl: `${baseUrl}/api/v1/public/files/${job.pdfFileName}`,
-    pdfBase64: pdfBuffer ? pdfBuffer.toString('base64') : null,
+    pdfBase64: bufferToSend ? bufferToSend.toString('base64') : null,
     pagesToPrint: job.pagesToPrint,
     copies: job.copies,
     colorMode: job.colorMode,
