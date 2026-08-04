@@ -246,6 +246,39 @@ async function downloadPreconfiguredAgent(req, res) {
   }
 }
 
+async function updateSelectedPrinter(req, res) {
+  try {
+    const tenant = req.tenant;
+    const { selectedPrinter, deviceId } = req.body;
+
+    if (!selectedPrinter) {
+      return res.status(400).json({ success: false, error: 'Printer name required' });
+    }
+
+    const device = await prisma.device.findFirst({
+      where: deviceId ? { id: deviceId, tenantId: tenant.id } : { tenantId: tenant.id },
+      orderBy: { lastSeenAt: 'desc' },
+    });
+
+    if (!device) {
+      return res.status(404).json({ success: false, error: 'No connected printer device found' });
+    }
+
+    const updatedDevice = await prisma.device.update({
+      where: { id: device.id },
+      data: { selectedPrinter },
+    });
+
+    return res.json({
+      success: true,
+      message: `Default printer updated to ${selectedPrinter}`,
+      selectedPrinter: updatedDevice.selectedPrinter,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Failed to update printer settings' });
+  }
+}
+
 module.exports = {
   getDashboardData,
   updatePricing,
@@ -254,4 +287,5 @@ module.exports = {
   getJobsHistory,
   getQrCode,
   downloadPreconfiguredAgent,
+  updateSelectedPrinter,
 };
