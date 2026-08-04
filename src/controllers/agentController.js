@@ -68,8 +68,11 @@ async function pollJobs(req, res) {
     }
 
     const host = req.get('host');
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-    const baseUrl = process.env.BASE_SERVER_URL || `${protocol}://${host}`;
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    let baseUrl = `${protocol}://${host}`;
+    if (process.env.BASE_SERVER_URL && !process.env.BASE_SERVER_URL.includes('localhost')) {
+      baseUrl = process.env.BASE_SERVER_URL;
+    }
 
     return res.json({
       success: true,
@@ -164,8 +167,11 @@ async function updateJobStatusHttp(req, res) {
 
 async function checkVersion(req, res) {
   const host = req.get('host');
-  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const baseUrl = process.env.BASE_SERVER_URL || `${protocol}://${host}`;
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  let baseUrl = `${protocol}://${host}`;
+  if (process.env.BASE_SERVER_URL && !process.env.BASE_SERVER_URL.includes('localhost')) {
+    baseUrl = process.env.BASE_SERVER_URL;
+  }
 
   return res.json({
     success: true,
