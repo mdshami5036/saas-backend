@@ -28,6 +28,8 @@ app.use(express.urlencoded({ extended: true }));
 // Serve uploads & static files
 const uploadsDir = process.env.UPLOAD_DIR || './uploads';
 app.use('/uploads', express.static(path.resolve(uploadsDir)));
+const downloadsDir = path.resolve(__dirname, '../public/downloads');
+app.use('/downloads', express.static(downloadsDir));
 
 // Root Health Check
 app.get('/health', (req, res) => {
