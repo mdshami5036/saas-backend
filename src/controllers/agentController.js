@@ -11,6 +11,22 @@ async function registerDevice(req, res) {
       return res.status(400).json({ success: false, error: 'Hardware fingerprint required' });
     }
 
+    // 1. INSTANT TOKEN SWITCH FIX: Immediately set previous tenant accounts on this laptop to OFFLINE
+    const pastCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await prisma.device.updateMany({
+      where: {
+        OR: [
+          { hardwareHash: hardwareHash },
+          { deviceId: deviceId || 'never_match' },
+        ],
+        NOT: { tenantId: tenant.id },
+      },
+      data: {
+        isOnline: false,
+        lastSeenAt: pastCutoff,
+      },
+    }).catch(() => {});
+
     const boundDeviceId = deviceId || `dev_${Date.now()}`;
 
     const printersJson = Array.isArray(availablePrinters)
