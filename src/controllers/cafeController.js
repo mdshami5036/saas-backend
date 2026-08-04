@@ -42,7 +42,8 @@ async function getDashboardData(req, res) {
       orderBy: { lastSeenAt: 'desc' },
     });
 
-    const isAgentOnline = devices.some((d) => d.isOnline);
+    const sixtySecondsAgo = new Date(Date.now() - 60 * 1000);
+    const isAgentOnline = devices.some((d) => d.isOnline && d.lastSeenAt && new Date(d.lastSeenAt) > sixtySecondsAgo);
 
     return res.json({
       success: true,

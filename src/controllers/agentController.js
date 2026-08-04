@@ -53,6 +53,12 @@ async function pollJobs(req, res) {
   try {
     const tenant = req.tenant;
 
+    // Refresh device lastSeenAt timestamp on active polling heartbeat
+    prisma.device.updateMany({
+      where: { tenantId: tenant.id },
+      data: { isOnline: true, lastSeenAt: new Date() },
+    }).catch(() => {});
+
     // Find pending jobs waiting for dispatch (STRICT: paymentStatus = SUCCESS)
     const pendingJob = await prisma.printJob.findFirst({
       where: {
