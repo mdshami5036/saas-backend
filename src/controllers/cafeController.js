@@ -112,7 +112,7 @@ async function updateRazorpayCredentials(req, res) {
       dataToUpdate.razorpayKeyId = razorpayKeyId.trim() || null;
     }
 
-    if (razorpayKeySecret && razorpayKeySecret.trim().length > 0) {
+    if (razorpayKeySecret !== undefined && razorpayKeySecret !== null && razorpayKeySecret.trim().length > 0) {
       dataToUpdate.razorpayKeySecret = razorpayKeySecret.trim();
     }
 
@@ -121,11 +121,13 @@ async function updateRazorpayCredentials(req, res) {
       data: dataToUpdate,
     });
 
+    console.log(`[Razorpay Credentials] Successfully saved for Tenant ${updated.name} (${updated.id}): KeyID=${updated.razorpayKeyId}`);
+
     return res.json({
       success: true,
       message: 'Custom Razorpay Merchant Account connected successfully!',
       razorpay: {
-        razorpayKeyId: updated.razorpayKeyId,
+        razorpayKeyId: updated.razorpayKeyId || '',
         hasCustomRazorpay: !!(updated.razorpayKeyId && updated.razorpayKeySecret),
       },
     });
