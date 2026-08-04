@@ -9,6 +9,7 @@ const {
   createOrder,
   verifyPayment,
   serveMemoryPdfFile,
+  getJobStatus,
 } = require('../controllers/publicController');
 
 // Multer configured strictly for IN-MEMORY STORAGE (Zero Disk Storage)
@@ -33,5 +34,6 @@ router.post('/upload', uploadLimiter, upload.single('pdf'), uploadPdfInMemory);
 router.post('/create-order', resolveTenantBySlug, createOrder);
 router.post('/verify-payment', verifyPayment);
 router.get('/files/:fileId', serveMemoryPdfFile);
+router.get('/jobs/:id/status', getJobStatus);
 
 module.exports = router;

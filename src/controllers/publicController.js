@@ -358,12 +358,49 @@ async function serveMemoryPdfFile(req, res) {
   }
 }
 
+async function getJobStatus(req, res) {
+  try {
+    const { id } = req.params;
+    const job = await prisma.printJob.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        jobStatus: true,
+        paymentStatus: true,
+        errorMessage: true,
+        printerName: true,
+        printedAt: true,
+      },
+    });
+
+    if (!job) {
+      return res.status(404).json({ success: false, error: 'Job not found' });
+    }
+
+    return res.json({
+      success: true,
+      job: {
+        id: job.id,
+        status: job.jobStatus,
+        paymentStatus: job.paymentStatus,
+        errorMessage: job.errorMessage,
+        printerName: job.printerName,
+        printedAt: job.printedAt,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Status fetch failed' });
+  }
+}
+
 module.exports = {
   getCafePublicInfo,
   uploadPdfInMemory,
   createOrder,
   verifyPayment,
   serveMemoryPdfFile,
+  getJobStatus,
   getMemoryPdfBuffer,
   clearMemoryPdfBuffer,
 };
+
