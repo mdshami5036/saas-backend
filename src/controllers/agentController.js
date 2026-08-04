@@ -204,10 +204,27 @@ async function checkVersion(req, res) {
   });
 }
 
+async function disconnectDevice(req, res) {
+  try {
+    const tenant = req.tenant;
+    const pastCutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+    await prisma.device.updateMany({
+      where: { tenantId: tenant.id },
+      data: { isOnline: false, lastSeenAt: pastCutoff },
+    });
+
+    return res.json({ success: true, message: 'Agent disconnected instantly' });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Disconnect failed' });
+  }
+}
+
 module.exports = {
   registerDevice,
   pollJobs,
   downloadJobFile,
   updateJobStatusHttp,
   checkVersion,
+  disconnectDevice,
 };

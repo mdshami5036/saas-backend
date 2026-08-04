@@ -7,6 +7,7 @@ const {
   downloadJobFile,
   updateJobStatusHttp,
   checkVersion,
+  disconnectDevice,
 } = require('../controllers/agentController');
 
 router.get('/version', checkVersion);
@@ -14,6 +15,7 @@ router.get('/version', checkVersion);
 router.use(resolveAgentToken);
 
 router.post('/register', registerDevice);
+router.post('/disconnect', disconnectDevice);
 router.get('/poll', pollJobs);
 router.get('/jobs/:id/file', downloadJobFile);
 router.post('/jobs/:id/status', updateJobStatusHttp);
