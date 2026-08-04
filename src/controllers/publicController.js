@@ -144,11 +144,11 @@ async function createOrder(req, res) {
     // Use Cafe's own Razorpay keys if fully configured; otherwise fall back to system Razorpay credentials
     const rzpKeyId = (tenant.razorpayKeyId && tenant.razorpayKeySecret)
       ? tenant.razorpayKeyId
-      : (process.env.RAZORPAY_KEY_ID || 'rzp_test_TKX15WgBfCpk1h');
+      : (process.env.RAZORPAY_KEY_ID || 'rzp_live_TKRvuXkMviyVSX');
 
     const rzpKeySecret = (tenant.razorpayKeyId && tenant.razorpayKeySecret)
       ? tenant.razorpayKeySecret
-      : (process.env.RAZORPAY_KEY_SECRET || 'samplekeysecret123');
+      : (process.env.RAZORPAY_KEY_SECRET || 'gRJ0aBC8WKivpAZ5cfXCmgcL');
 
     const maxPages = parseInt(totalPages, 10);
     const selectedPagesCount = parsePageRange(pagesToPrint, maxPages);
@@ -264,7 +264,7 @@ async function verifyPayment(req, res) {
     const tenant = job.tenant;
     const secretToUse = (tenant && tenant.razorpayKeyId && tenant.razorpayKeySecret)
       ? tenant.razorpayKeySecret
-      : (process.env.RAZORPAY_KEY_SECRET || 'samplekeysecret123');
+      : (process.env.RAZORPAY_KEY_SECRET || 'gRJ0aBC8WKivpAZ5cfXCmgcL');
 
     const paymentRecord = await prisma.payment.findUnique({
       where: { printJobId: jobId },
