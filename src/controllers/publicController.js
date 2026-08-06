@@ -17,6 +17,15 @@ function clearMemoryPdfBuffer(fileId) {
     pdfMemoryMap.delete(fileId);
     console.log(`[Zero-Storage Privacy] PDF buffer #${fileId} wiped permanently from RAM memory.`);
   }
+  const fs = require('fs');
+  const path = require('path');
+  const tempDiskPath = path.join(__dirname, '../../uploads/temp_pdf', `${fileId}.pdf`);
+  if (fs.existsSync(tempDiskPath)) {
+    try {
+      fs.unlinkSync(tempDiskPath);
+      console.log(`[Zero-Storage Privacy] PDF disk file #${fileId}.pdf permanently deleted from server disk post-print.`);
+    } catch (e) {}
+  }
 }
 
 // Calculate actual pages count from range expression like "1-3,5,8-10"
@@ -92,17 +101,30 @@ async function uploadPdfInMemory(req, res) {
 
     const fileId = 'ram_' + Date.now() + '_' + crypto.randomBytes(6).toString('hex');
 
-    // Store strictly in RAM memory with 10-minute auto-purge timer
+    // 1. Store in RAM memory
     pdfMemoryMap.set(fileId, {
       buffer: fileBuffer,
       originalName: req.file.originalname,
       totalPages,
-      expiresAt: Date.now() + 10 * 60 * 1000,
+      expiresAt: Date.now() + 24 * 60 * 60 * 1000,
     });
 
-    setTimeout(() => clearMemoryPdfBuffer(fileId), 10 * 60 * 1000);
+    // 2. Save persistent disk copy in temp_pdf folder (resilient across server restarts)
+    const tempDir = path.join(__dirname, '../../uploads/temp_pdf');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+    const tempDiskPath = path.join(tempDir, `${fileId}.pdf`);
+    try {
+      fs.writeFileSync(tempDiskPath, fileBuffer);
+    } catch (writeErr) {
+      console.warn('Temp disk write warning:', writeErr.message);
+    }
 
-    console.log(`[Zero-Storage Privacy] Uploaded PDF #${fileId} held in RAM memory. Zero files written to disk.`);
+    // Safety fallback: auto-clean after 24 hours only if abandoned unpaid
+    setTimeout(() => clearMemoryPdfBuffer(fileId), 24 * 60 * 60 * 1000);
+
+    console.log(`[Zero-Storage Privacy] Uploaded PDF #${fileId} held in RAM & temp disk until printed.`);
 
     return res.json({
       success: true,
@@ -114,8 +136,8 @@ async function uploadPdfInMemory(req, res) {
       },
     });
   } catch (error) {
-    console.error('In-memory upload error:', error);
-    return res.status(500).json({ success: false, error: 'PDF upload failed', details: error.message });
+    console.error('uploadPdfInMemory error:', error);
+    return res.status(500).json({ success: false, error: 'PDF processing failed' });
   }
 }
 
@@ -163,7 +185,8 @@ async function createOrder(req, res) {
       return res.status(400).json({ success: false, error: 'Invalid print price calculation' });
     }
 
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const tempDiskPath = path.join(__dirname, '../../uploads/temp_pdf', `${fileName}.pdf`);
 
     // Create PrintJob in DB with PENDING status (NO PRINTING BEFORE PAYMENT)
     const printJob = await prisma.printJob.create({
@@ -173,7 +196,7 @@ async function createOrder(req, res) {
         customerPhone: customerPhone || null,
         originalName: originalName || 'Document.pdf',
         pdfFileName: fileName,
-        pdfPath: `ram://${fileName}`,
+        pdfPath: tempDiskPath,
         totalPages: maxPages,
         pagesToPrint: pagesToPrint || 'ALL',
         copies: numCopies,

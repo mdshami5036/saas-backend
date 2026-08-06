@@ -96,18 +96,26 @@ async function pollJobs(req, res) {
       baseUrl = process.env.BASE_SERVER_URL;
     }
 
+    const activeDevice = await prisma.device.findFirst({
+      where: { tenantId: tenant.id, isOnline: true },
+      select: { selectedPrinter: true },
+    }).catch(() => null);
+
+    const targetPrinter = pendingJob.printerName || (activeDevice ? activeDevice.selectedPrinter : null);
+
     return res.json({
       success: true,
       hasJob: true,
       job: {
         jobId: pendingJob.id,
         customerName: pendingJob.customerName,
+        originalName: pendingJob.originalName,
         downloadUrl: `${baseUrl}/api/v1/agent/jobs/${pendingJob.id}/file`,
         pagesToPrint: pendingJob.pagesToPrint,
         copies: pendingJob.copies,
         colorMode: pendingJob.colorMode,
         totalPages: pendingJob.totalPages,
-        printerName: pendingJob.printerName,
+        printerName: targetPrinter,
         paymentStatus: pendingJob.paymentStatus,
       },
     });
@@ -174,11 +182,17 @@ async function updateJobStatusHttp(req, res) {
       },
     });
 
-    // Delete PDF file post-print completion
-    if (status === 'COMPLETED' && job.pdfPath && fs.existsSync(job.pdfPath)) {
-      fs.unlink(job.pdfPath, (err) => {
-        if (err) console.warn('[Cleanup] Delete file post-print failed:', err.message);
-      });
+    // Delete PDF file and clear RAM memory buffer post-print completion
+    if (status === 'COMPLETED') {
+      const publicCtrl = require('./publicController');
+      if (job.pdfFileName) {
+        publicCtrl.clearMemoryPdfBuffer(job.pdfFileName);
+      }
+      if (job.pdfPath && fs.existsSync(job.pdfPath)) {
+        fs.unlink(job.pdfPath, (err) => {
+          if (err) console.warn('[Cleanup] Delete file post-print failed:', err.message);
+        });
+      }
     }
 
     return res.json({ success: true, job: updated });

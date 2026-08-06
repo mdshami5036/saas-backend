@@ -4,8 +4,8 @@ const { generateQRCodeDataURL, generateQRCodeSVG } = require('../utils/qrGenerat
 const path = require('path');
 const fs = require('fs');
 
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
-const BASE_SERVER_URL = process.env.BASE_SERVER_URL || 'http://localhost:5000';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://saas-nine-ochre.vercel.app';
+const BASE_SERVER_URL = process.env.BASE_SERVER_URL || 'https://saas-backend-production-5c3e.up.railway.app';
 
 async function getDashboardData(req, res) {
   try {
