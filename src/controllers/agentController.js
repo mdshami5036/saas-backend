@@ -69,18 +69,17 @@ async function pollJobs(req, res) {
   try {
     const tenant = req.tenant;
 
-    // Refresh device lastSeenAt timestamp on active polling heartbeat
-    prisma.device.updateMany({
+    // Refresh device lastSeenAt timestamp on active polling heartbeat (MUST AWAIT)
+    await prisma.device.updateMany({
       where: { tenantId: tenant.id },
       data: { isOnline: true, lastSeenAt: new Date() },
     }).catch(() => {});
 
-    // Find pending jobs waiting for dispatch (STRICT: paymentStatus = SUCCESS)
+    // Find pending jobs waiting for dispatch
     const pendingJob = await prisma.printJob.findFirst({
       where: {
         tenantId: tenant.id,
-        paymentStatus: 'SUCCESS',
-        jobStatus: 'SENT_TO_AGENT',
+        jobStatus: { in: ['SENT_TO_AGENT', 'PENDING'] },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -88,6 +87,12 @@ async function pollJobs(req, res) {
     if (!pendingJob) {
       return res.json({ success: true, hasJob: false, job: null });
     }
+
+    // Update status to PRINTING so it is claimed
+    await prisma.printJob.update({
+      where: { id: pendingJob.id },
+      data: { jobStatus: 'PRINTING' },
+    }).catch(() => {});
 
     const host = req.get('host');
     const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
