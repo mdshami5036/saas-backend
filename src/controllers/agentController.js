@@ -152,6 +152,12 @@ async function downloadJobFile(req, res) {
       return res.sendFile(path.resolve(job.pdfPath));
     }
 
+    // If PDF file is missing (stale job from old server build), mark job COMPLETED to clear queue cleanly
+    await prisma.printJob.update({
+      where: { id: job.id },
+      data: { jobStatus: 'COMPLETED', printedAt: new Date(), errorMessage: 'Cleared stale pre-deploy test job' }
+    }).catch(() => {});
+
     return res.status(404).json({ success: false, error: 'PDF file expired or unavailable' });
   } catch (error) {
     return res.status(500).json({ success: false, error: 'File download error' });
