@@ -75,11 +75,12 @@ async function pollJobs(req, res) {
       data: { isOnline: true, lastSeenAt: new Date() },
     }).catch(() => {});
 
-    // Find pending jobs waiting for dispatch
+    // Find pending jobs waiting for dispatch (STRICT: ONLY AFTER PAYMENT IS SUCCESSFUL)
     const pendingJob = await prisma.printJob.findFirst({
       where: {
         tenantId: tenant.id,
-        jobStatus: { in: ['SENT_TO_AGENT', 'PENDING'] },
+        paymentStatus: 'SUCCESS',
+        jobStatus: 'SENT_TO_AGENT',
       },
       orderBy: { createdAt: 'asc' },
     });
