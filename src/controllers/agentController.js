@@ -130,14 +130,14 @@ async function downloadJobFile(req, res) {
     const { id } = req.params;
 
     const job = await prisma.printJob.findFirst({
-      where: { id, tenantId: tenant.id, paymentStatus: 'SUCCESS' },
+      where: { id, tenantId: tenant.id },
     });
 
     if (!job) {
-      return res.status(404).json({ success: false, error: 'Paid print job not found' });
+      return res.status(404).json({ success: false, error: 'Print job not found' });
     }
 
-    // Check zero-storage RAM memory buffer first
+    // 1. Check zero-storage RAM memory buffer first
     const publicCtrl = require('./publicController');
     const memoryRecord = publicCtrl.getMemoryPdfBuffer(job.pdfFileName);
 
@@ -146,16 +146,23 @@ async function downloadJobFile(req, res) {
       return res.send(memoryRecord.buffer);
     }
 
-    // Disk fallback if pdfPath exists
+    // 2. Check temp_pdf persistent disk location
+    const tempDiskPath = path.join(__dirname, '../../uploads/temp_pdf', `${job.pdfFileName}.pdf`);
+    if (fs.existsSync(tempDiskPath)) {
+      res.contentType('application/pdf');
+      return res.sendFile(path.resolve(tempDiskPath));
+    }
+
+    // 3. Fallback check for job.pdfPath if specified
     if (job.pdfPath && fs.existsSync(job.pdfPath)) {
       res.contentType('application/pdf');
       return res.sendFile(path.resolve(job.pdfPath));
     }
 
-    // If PDF file is missing (stale job from old server build), mark job COMPLETED to clear queue cleanly
+    // If PDF file is missing (expired or server restarted), mark job COMPLETED to clear queue cleanly
     await prisma.printJob.update({
       where: { id: job.id },
-      data: { jobStatus: 'COMPLETED', printedAt: new Date(), errorMessage: 'Cleared stale pre-deploy test job' }
+      data: { jobStatus: 'COMPLETED', printedAt: new Date(), errorMessage: 'Cleared expired payload job' }
     }).catch(() => {});
 
     return res.status(404).json({ success: false, error: 'PDF file expired or unavailable' });
