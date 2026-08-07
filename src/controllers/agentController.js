@@ -152,24 +152,21 @@ async function downloadJobFile(req, res) {
       return res.send(memoryRecord.buffer);
     }
 
-    // 2. Check temp_pdf persistent disk location
-    const tempDiskPath = path.join(__dirname, '../../uploads/temp_pdf', `${job.pdfFileName}.pdf`);
-    if (fs.existsSync(tempDiskPath)) {
-      res.contentType('application/pdf');
-      return res.sendFile(path.resolve(tempDiskPath));
-    }
+    const cleanId = (job.pdfFileName || '').replace(/\.pdf$/i, '');
 
-    // 3. Fallback check for job.pdfPath if specified
-    if (job.pdfPath && fs.existsSync(job.pdfPath)) {
-      res.contentType('application/pdf');
-      return res.sendFile(path.resolve(job.pdfPath));
-    }
+    // 2. Check temp_pdf persistent disk location variations
+    const diskPaths = [
+      path.join(__dirname, '../../uploads/temp_pdf', `${cleanId}.pdf`),
+      path.join(__dirname, '../../uploads/temp_pdf', cleanId),
+      job.pdfPath
+    ].filter(Boolean);
 
-    // If PDF file is missing (expired or server restarted), mark job COMPLETED to clear queue cleanly
-    await prisma.printJob.update({
-      where: { id: job.id },
-      data: { jobStatus: 'COMPLETED', printedAt: new Date(), errorMessage: 'Cleared expired payload job' }
-    }).catch(() => {});
+    for (const dPath of diskPaths) {
+      if (fs.existsSync(dPath)) {
+        res.contentType('application/pdf');
+        return res.sendFile(path.resolve(dPath));
+      }
+    }
 
     return res.status(404).json({ success: false, error: 'PDF file expired or unavailable' });
   } catch (error) {

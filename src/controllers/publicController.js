@@ -11,23 +11,32 @@ const { dispatchJobToAgent } = require('../services/socketService');
 const pdfMemoryMap = new Map();
 
 function getMemoryPdfBuffer(fileId) {
-  return pdfMemoryMap.get(fileId);
+  if (!fileId) return null;
+  const cleanId = fileId.replace(/\.pdf$/i, '');
+  return pdfMemoryMap.get(fileId) || pdfMemoryMap.get(cleanId) || pdfMemoryMap.get(`${cleanId}.pdf`);
 }
 
 function clearMemoryPdfBuffer(fileId) {
-  if (pdfMemoryMap.has(fileId)) {
-    pdfMemoryMap.delete(fileId);
-    console.log(`[Zero-Storage Privacy] PDF buffer #${fileId} wiped permanently from RAM memory.`);
-  }
-  const fs = require('fs');
-  const path = require('path');
-  const tempDiskPath = path.join(__dirname, '../../uploads/temp_pdf', `${fileId}.pdf`);
-  if (fs.existsSync(tempDiskPath)) {
-    try {
-      fs.unlinkSync(tempDiskPath);
-      console.log(`[Zero-Storage Privacy] PDF disk file #${fileId}.pdf permanently deleted from server disk post-print.`);
-    } catch (e) {}
-  }
+  if (!fileId) return;
+  const cleanId = fileId.replace(/\.pdf$/i, '');
+  
+  // Retain RAM buffer for 30 minutes so sequential 2nd & 3rd print jobs never fail with 404
+  setTimeout(() => {
+    if (pdfMemoryMap.has(fileId)) pdfMemoryMap.delete(fileId);
+    if (pdfMemoryMap.has(cleanId)) pdfMemoryMap.delete(cleanId);
+    if (pdfMemoryMap.has(`${cleanId}.pdf`)) pdfMemoryMap.delete(`${cleanId}.pdf`);
+    console.log(`[Zero-Storage Privacy] PDF buffer #${fileId} wiped from RAM after 30-min retention window.`);
+  }, 30 * 60 * 1000);
+
+  const tempDiskPath = path.join(__dirname, '../../uploads/temp_pdf', `${cleanId}.pdf`);
+  setTimeout(() => {
+    if (fs.existsSync(tempDiskPath)) {
+      try {
+        fs.unlinkSync(tempDiskPath);
+        console.log(`[Zero-Storage Privacy] PDF disk file #${cleanId}.pdf permanently deleted after retention.`);
+      } catch (e) {}
+    }
+  }, 30 * 60 * 1000);
 }
 
 // Calculate actual pages count from range expression like "1-3,5,8-10"
