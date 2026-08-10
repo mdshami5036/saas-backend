@@ -60,6 +60,18 @@ app.use((err, req, res, next) => {
 initSocketServer(server);
 startCleanupWorker();
 
+// Safely sync database schema in background on startup if DATABASE_URL is valid
+if (process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith('postgres://') || process.env.DATABASE_URL.startsWith('postgresql://')) && !process.env.DATABASE_URL.includes('placeholder')) {
+  const { exec } = require('child_process');
+  exec('npx prisma db push', (err, stdout, stderr) => {
+    if (err) {
+      console.warn('[Prisma DB Sync Warning]:', err.message);
+    } else {
+      console.log('[Prisma DB Sync]: Database schema synchronized successfully.');
+    }
+  });
+}
+
 server.listen(PORT, () => {
   console.log(`========================================================`);
   console.log(`🚀 Auto Print Backend API running on port ${PORT}`);
