@@ -7,7 +7,6 @@
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "build": "node scripts/build.js",
-    "postinstall": "node scripts/build.js",
     "prisma:generate": "node scripts/build.js",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
