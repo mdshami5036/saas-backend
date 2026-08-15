@@ -174,6 +174,20 @@ async function createOrder(req, res) {
       return res.status(400).json({ success: false, error: 'File details missing' });
     }
 
+    // Verify PDF file existence in RAM or temp disk
+    const cleanId = fileName.replace(/\.pdf$/i, '');
+    const memRec = getMemoryPdfBuffer(cleanId);
+    const tempDiskPath = path.join(__dirname, '../../uploads/temp_pdf', `${cleanId}.pdf`);
+    const existsOnDisk = fs.existsSync(tempDiskPath);
+
+    if (!memRec && !existsOnDisk) {
+      console.warn(`[Create Order Warning] Uploaded PDF #${fileName} not found in RAM or temp disk.`);
+      return res.status(400).json({
+        success: false,
+        error: 'Uploaded document was not found or expired. Please upload your PDF again.',
+      });
+    }
+
     // Use Cafe's own Razorpay keys if fully configured; otherwise fall back to system Razorpay credentials
     const rzpKeyId = (tenant.razorpayKeyId && tenant.razorpayKeySecret)
       ? tenant.razorpayKeyId
@@ -379,14 +393,25 @@ async function verifyPayment(req, res) {
 async function serveMemoryPdfFile(req, res) {
   try {
     const { fileId } = req.params;
-    const memoryRecord = getMemoryPdfBuffer(fileId);
+    const cleanId = (fileId || '').replace(/\.pdf$/i, '');
+    const memoryRecord = getMemoryPdfBuffer(cleanId);
 
-    if (!memoryRecord || !memoryRecord.buffer) {
-      return res.status(404).json({ success: false, error: 'PDF file not found or expired from memory' });
+    if (memoryRecord && memoryRecord.buffer) {
+      res.contentType('application/pdf');
+      res.setHeader('Content-Length', memoryRecord.buffer.length);
+      return res.send(memoryRecord.buffer);
     }
 
-    res.contentType('application/pdf');
-    return res.send(memoryRecord.buffer);
+    // Disk fallback from temp_pdf directory
+    const tempDiskPath = path.join(__dirname, '../../uploads/temp_pdf', `${cleanId}.pdf`);
+    if (fs.existsSync(tempDiskPath)) {
+      const diskBuffer = fs.readFileSync(tempDiskPath);
+      res.contentType('application/pdf');
+      res.setHeader('Content-Length', diskBuffer.length);
+      return res.send(diskBuffer);
+    }
+
+    return res.status(404).json({ success: false, error: 'PDF file not found or expired' });
   } catch (error) {
     return res.status(500).json({ success: false, error: 'Memory PDF stream error' });
   }
