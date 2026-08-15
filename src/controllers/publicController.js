@@ -211,7 +211,6 @@ async function createOrder(req, res) {
     }
 
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const tempDiskPath = path.join(__dirname, '../../uploads/temp_pdf', `${fileName}.pdf`);
 
     // Create PrintJob in DB with PENDING status (NO PRINTING BEFORE PAYMENT)
     const printJob = await prisma.printJob.create({
