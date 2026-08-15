@@ -251,11 +251,7 @@ async function downloadPreconfiguredAgent(req, res) {
 async function updateSelectedPrinter(req, res) {
   try {
     const tenant = req.tenant;
-    const { selectedPrinter, deviceId } = req.body;
-
-    if (!selectedPrinter) {
-      return res.status(400).json({ success: false, error: 'Printer name required' });
-    }
+    const { selectedPrinter, bwPrinter, colorPrinter, deviceId } = req.body;
 
     const device = await prisma.device.findFirst({
       where: deviceId ? { id: deviceId, tenantId: tenant.id } : { tenantId: tenant.id },
@@ -266,15 +262,22 @@ async function updateSelectedPrinter(req, res) {
       return res.status(404).json({ success: false, error: 'No connected printer device found' });
     }
 
+    const updateData = {};
+    if (selectedPrinter !== undefined) updateData.selectedPrinter = selectedPrinter;
+    if (bwPrinter !== undefined) updateData.bwPrinter = bwPrinter;
+    if (colorPrinter !== undefined) updateData.colorPrinter = colorPrinter;
+
     const updatedDevice = await prisma.device.update({
       where: { id: device.id },
-      data: { selectedPrinter },
+      data: updateData,
     });
 
     return res.json({
       success: true,
-      message: `Default printer updated to ${selectedPrinter}`,
+      message: `Hardware printer preferences updated successfully!`,
       selectedPrinter: updatedDevice.selectedPrinter,
+      bwPrinter: updatedDevice.bwPrinter,
+      colorPrinter: updatedDevice.colorPrinter,
     });
   } catch (error) {
     return res.status(500).json({ success: false, error: 'Failed to update printer settings' });

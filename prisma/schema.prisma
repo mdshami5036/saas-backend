@@ -45,17 +45,19 @@ model Tenant {
 }
 
 model Device {
-  id               String   @id @default(uuid())
-  tenantId         String
-  deviceId         String   @unique
-  hardwareHash     String
-  deviceName       String   @default("Main Counter Laptop")
-  selectedPrinter  String?
+  id                String   @id @default(uuid())
+  tenantId          String
+  deviceId          String   @unique
+  hardwareHash      String
+  deviceName        String   @default("Main Counter Laptop")
+  selectedPrinter   String?
+  bwPrinter         String?  @default("Default System Printer")
+  colorPrinter      String?  @default("Default System Printer")
   availablePrinters String?  @default("[]")
-  isOnline         Boolean  @default(false)
-  lastSeenAt       DateTime @default(now())
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  isOnline          Boolean  @default(false)
+  lastSeenAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   printJobs PrintJob[]

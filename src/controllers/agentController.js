@@ -103,10 +103,15 @@ async function pollJobs(req, res) {
 
     const activeDevice = await prisma.device.findFirst({
       where: { tenantId: tenant.id, isOnline: true },
-      select: { selectedPrinter: true },
+      select: { selectedPrinter: true, bwPrinter: true, colorPrinter: true },
     }).catch(() => null);
 
-    const targetPrinter = pendingJob.printerName || (activeDevice ? activeDevice.selectedPrinter : null);
+    const isColor = pendingJob.colorMode === 'COLOR';
+    const dynamicPrinter = isColor
+      ? (activeDevice?.colorPrinter || activeDevice?.selectedPrinter)
+      : (activeDevice?.bwPrinter || activeDevice?.selectedPrinter);
+
+    const targetPrinter = pendingJob.printerName || dynamicPrinter || 'Default System Printer';
 
     return res.json({
       success: true,
