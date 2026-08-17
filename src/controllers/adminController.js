@@ -12,21 +12,26 @@ async function adminLogin(req, res) {
       return res.status(400).json({ success: false, error: 'Email and password required' });
     }
 
+    const cleanEmail = email.trim().toLowerCase();
+
     let admin = await prisma.admin.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email: cleanEmail },
     });
 
-    // Default admin creation if none exists
-    if (!admin && email === 'admin@autoprint.com' && password === 'admin123') {
-      const hash = await bcrypt.hash('admin123', 10);
-      admin = await prisma.admin.create({
-        data: {
-          email: 'admin@autoprint.com',
-          name: 'Platform Super Admin',
-          passwordHash: hash,
-          role: 'SUPER_ADMIN',
-        },
-      });
+    // Auto-initialize Super Admin if first login
+    if (!admin) {
+      if ((cleanEmail === 'weve.cyber@gmail.com' && password === 'WevePrint@2026') ||
+          (cleanEmail === 'admin@autoprint.com' && password === 'admin123')) {
+        const hash = await bcrypt.hash(password, 10);
+        admin = await prisma.admin.create({
+          data: {
+            email: cleanEmail,
+            name: 'Platform Super Admin',
+            passwordHash: hash,
+            role: 'SUPER_ADMIN',
+          },
+        });
+      }
     }
 
     if (!admin) {
