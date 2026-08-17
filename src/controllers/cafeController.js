@@ -78,26 +78,29 @@ async function getDashboardData(req, res) {
 async function updatePricing(req, res) {
   try {
     const tenant = req.tenant;
-    const { bwPricePerPage, colorPricePerPage } = req.body;
+    const { bwPricePerPage, colorPricePerPage, name } = req.body;
+
+    const updateData = {};
+    if (bwPricePerPage !== undefined) updateData.bwPricePerPage = parseFloat(bwPricePerPage);
+    if (colorPricePerPage !== undefined) updateData.colorPricePerPage = parseFloat(colorPricePerPage);
+    if (name && name.trim()) updateData.name = name.trim();
 
     const updated = await prisma.tenant.update({
       where: { id: tenant.id },
-      data: {
-        bwPricePerPage: bwPricePerPage ? parseFloat(bwPricePerPage) : tenant.bwPricePerPage,
-        colorPricePerPage: colorPricePerPage ? parseFloat(colorPricePerPage) : tenant.colorPricePerPage,
-      },
+      data: updateData,
     });
 
     return res.json({
       success: true,
-      message: 'Pricing updated successfully',
-      pricing: {
+      message: 'Profile & pricing updated successfully',
+      cafe: {
+        name: updated.name,
         bwPricePerPage: updated.bwPricePerPage,
         colorPricePerPage: updated.colorPricePerPage,
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Failed to update pricing' });
+    return res.status(500).json({ success: false, error: 'Failed to update settings' });
   }
 }
 
