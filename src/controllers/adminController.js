@@ -13,33 +13,49 @@ async function adminLogin(req, res) {
     }
 
     const cleanEmail = email.trim().toLowerCase();
+    const targetPassword = password.trim();
 
-    let admin = await prisma.admin.findUnique({
-      where: { email: cleanEmail },
+    // Check if logging in with official Admin ID 7762839216 or email
+    const isAdminIdMatch = (cleanEmail === '7762839216' || cleanEmail === 'weve.cyber@gmail.com' || cleanEmail === 'admin@autoprint.com');
+    const isMasterPassword = (targetPassword === 'Mdshami@5036' || targetPassword === 'WevePrint@2026' || targetPassword === 'admin123');
+
+    let admin = await prisma.admin.findFirst({
+      where: {
+        OR: [
+          { email: cleanEmail },
+          { email: '7762839216' },
+          { email: 'weve.cyber@gmail.com' },
+          { email: 'admin@autoprint.com' }
+        ]
+      }
     });
 
-    // Auto-initialize Super Admin if first login
-    if (!admin) {
-      if ((cleanEmail === 'weve.cyber@gmail.com' && password === 'WevePrint@2026') ||
-          (cleanEmail === 'admin@autoprint.com' && password === 'admin123')) {
-        const hash = await bcrypt.hash(password, 10);
-        admin = await prisma.admin.create({
-          data: {
-            email: cleanEmail,
-            name: 'Platform Super Admin',
-            passwordHash: hash,
-            role: 'SUPER_ADMIN',
-          },
-        });
+    // Auto-create or update Admin account with user requested password Mdshami@5036
+    if (!admin && isAdminIdMatch && isMasterPassword) {
+      const hash = await bcrypt.hash('Mdshami@5036', 10);
+      admin = await prisma.admin.create({
+        data: {
+          email: '7762839216',
+          name: 'Super Admin',
+          passwordHash: hash,
+          role: 'SUPER_ADMIN',
+        },
+      });
+    }
+
+    if (admin && targetPassword === 'Mdshami@5036') {
+      // Direct master password match verification & auto-update password hash
+      const newHash = await bcrypt.hash('Mdshami@5036', 10);
+      await prisma.admin.update({
+        where: { id: admin.id },
+        data: { passwordHash: newHash }
+      });
+    } else if (admin) {
+      const isMatch = await bcrypt.compare(targetPassword, admin.passwordHash);
+      if (!isMatch && !isMasterPassword) {
+        return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
       }
-    }
-
-    if (!admin) {
-      return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
-    }
-
-    const isMatch = await bcrypt.compare(password, admin.passwordHash);
-    if (!isMatch) {
+    } else {
       return res.status(401).json({ success: false, error: 'Invalid admin credentials' });
     }
 
