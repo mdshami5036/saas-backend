@@ -7,58 +7,63 @@ const { verifyFirebaseToken } = require('../config/firebaseAdmin');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'super-secret-jwt-key-auto-print-saas-2026';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://saas-nine-ochre.vercel.app';
-const BASE_SERVER_URL = process.env.BASE_SERVER_URL || 'https://saas-backend-production-5c3e.up.railway.app';
+const BASE_SERVER_URL = process.env.BASE_SERVER_URL || 'https://saas-backend-lyd4.onrender.com';
 
 async function registerCafe(req, res) {
   try {
     const { name, email, password, phone, bwPricePerPage, colorPricePerPage } = req.body;
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ success: false, error: 'Name, email, and password are required' });
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Cyber Cafe / Shop name is mandatory' });
+    }
+
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, error: 'Valid email address is mandatory' });
+    }
+
+    if (!phone || !phone.trim() || phone.trim().replace(/\D/g, '').length < 10) {
+      return res.status(400).json({ success: false, error: 'A valid 10-digit mobile number is mandatory' });
+    }
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 6 characters long' });
     }
 
     const cleanEmail = email.toLowerCase().trim();
 
-    let tenant = await prisma.tenant.findUnique({
+    let existingTenant = await prisma.tenant.findUnique({
       where: { email: cleanEmail },
     });
 
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    if (tenant) {
-      // Update password & details for existing cafe account
-      tenant = await prisma.tenant.update({
-        where: { id: tenant.id },
-        data: {
-          passwordHash,
-          phone: phone || tenant.phone,
-          bwPricePerPage: bwPricePerPage ? parseFloat(bwPricePerPage) : tenant.bwPricePerPage,
-          colorPricePerPage: colorPricePerPage ? parseFloat(colorPricePerPage) : tenant.colorPricePerPage,
-        },
-      });
-    } else {
-      const slug = generateSlug(name);
-      const apiKey = generateApiKey();
-      const agentToken = generateAgentToken();
-      const websiteUrl = `${FRONTEND_URL}/cafe/${slug}`;
-      const qrCodeUrl = await generateQRCodeDataURL(websiteUrl);
-
-      tenant = await prisma.tenant.create({
-        data: {
-          name,
-          email: cleanEmail,
-          passwordHash,
-          phone: phone || null,
-          slug,
-          apiKey,
-          agentToken,
-          bwPricePerPage: bwPricePerPage ? parseFloat(bwPricePerPage) : 2.0,
-          colorPricePerPage: colorPricePerPage ? parseFloat(colorPricePerPage) : 10.0,
-          customWebsiteUrl: websiteUrl,
-          qrCodeUrl,
-        },
+    if (existingTenant) {
+      return res.status(400).json({
+        success: false,
+        error: 'An account with this email address already exists. Please login instead.',
       });
     }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const slug = generateSlug(name);
+    const apiKey = generateApiKey();
+    const agentToken = generateAgentToken();
+    const websiteUrl = `${FRONTEND_URL}/cafe/${slug}`;
+    const qrCodeUrl = await generateQRCodeDataURL(websiteUrl);
+
+    const tenant = await prisma.tenant.create({
+      data: {
+        name: name.trim(),
+        email: cleanEmail,
+        passwordHash,
+        phone: phone ? phone.trim() : null,
+        slug,
+        apiKey,
+        agentToken,
+        bwPricePerPage: bwPricePerPage ? parseFloat(bwPricePerPage) : 2.0,
+        colorPricePerPage: colorPricePerPage ? parseFloat(colorPricePerPage) : 10.0,
+        customWebsiteUrl: websiteUrl,
+        qrCodeUrl,
+      },
+    });
 
     const token = jwt.sign(
       { tenantId: tenant.id, slug: tenant.slug, role: 'TENANT' },
@@ -66,9 +71,9 @@ async function registerCafe(req, res) {
       { expiresIn: '7d' }
     );
 
-    return res.status(200).json({
+    return res.status(201).json({
       success: true,
-      message: 'Cyber Cafe account ready',
+      message: 'Cyber Cafe account registered successfully',
       token,
       tenant: {
         id: tenant.id,
@@ -90,53 +95,48 @@ async function registerCafe(req, res) {
   }
 }
 
+// STRICT CAFE LOGIN CONTROLLER
 async function loginCafe(req, res) {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({ success: false, error: 'Email and password are required' });
+    if (!email || !email.trim()) {
+      return res.status(400).json({ success: false, error: 'Please enter your account email address' });
+    }
+
+    if (!password) {
+      return res.status(400).json({ success: false, error: 'Please enter your account password' });
     }
 
     const cleanEmail = email.toLowerCase().trim();
 
-    let tenant = await prisma.tenant.findUnique({
+    const tenant = await prisma.tenant.findUnique({
       where: { email: cleanEmail },
     });
 
-    // Auto-create tenant account if logging in for first time with Email & Password
+    // 1. STRICT CHECK: Return error if user is NOT registered! DO NOT AUTO-CREATE!
     if (!tenant) {
-      const passwordHash = await bcrypt.hash(password, 10);
-      const name = cleanEmail.split('@')[0];
-      const slug = generateSlug(name);
-      const apiKey = generateApiKey();
-      const agentToken = generateAgentToken();
-      const websiteUrl = `${FRONTEND_URL}/cafe/${slug}`;
-      const qrCodeUrl = await generateQRCodeDataURL(websiteUrl);
-
-      tenant = await prisma.tenant.create({
-        data: {
-          name,
-          email: cleanEmail,
-          passwordHash,
-          slug,
-          apiKey,
-          agentToken,
-          bwPricePerPage: 2.0,
-          colorPricePerPage: 10.0,
-          customWebsiteUrl: websiteUrl,
-          qrCodeUrl,
-        },
+      return res.status(401).json({
+        success: false,
+        error: 'No Cyber Cafe account found with this email address. Please register your shop first.',
       });
-    } else {
-      const isMatch = await bcrypt.compare(password, tenant.passwordHash);
-      if (!isMatch) {
-        return res.status(401).json({ success: false, error: 'Invalid email or password' });
-      }
     }
 
+    // 2. STRICT CHECK: Verify bcrypt password hash
+    const isMatch = await bcrypt.compare(password, tenant.passwordHash);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid password. Please check your credentials and try again.',
+      });
+    }
+
+    // 3. STRICT CHECK: Ensure account status is ACTIVE
     if (tenant.status !== 'ACTIVE') {
-      return res.status(403).json({ success: false, error: 'Your Cyber Cafe account has been disabled' });
+      return res.status(403).json({
+        success: false,
+        error: 'Your Cyber Cafe account has been suspended or disabled by Super Admin.',
+      });
     }
 
     const token = jwt.sign(
@@ -166,7 +166,8 @@ async function loginCafe(req, res) {
       },
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Login failed', details: error.message });
+    console.error('Login error:', error);
+    return res.status(500).json({ success: false, error: 'Login failed due to server error', details: error.message });
   }
 }
 
@@ -174,7 +175,7 @@ async function firebaseAuthSync(req, res) {
   try {
     const { idToken, email, name } = req.body;
 
-    if (!email) {
+    if (!email || !email.trim()) {
       return res.status(400).json({ success: false, error: 'Email is required' });
     }
 
@@ -252,6 +253,39 @@ async function firebaseAuthSync(req, res) {
   }
 }
 
+async function changePassword(req, res) {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const tenantId = req.tenant.id;
+
+    if (!newPassword || newPassword.length < 4) {
+      return res.status(400).json({ success: false, error: 'New password must be at least 4 characters long' });
+    }
+
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) {
+      return res.status(404).json({ success: false, error: 'Account not found' });
+    }
+
+    if (currentPassword) {
+      const isMatch = await bcrypt.compare(currentPassword, tenant.passwordHash);
+      if (!isMatch) {
+        return res.status(400).json({ success: false, error: 'Current password does not match' });
+      }
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { passwordHash },
+    });
+
+    return res.json({ success: true, message: 'Password updated successfully' });
+  } catch (err) {
+    return res.status(500).json({ success: false, error: 'Failed to update password', details: err.message });
+  }
+}
+
 async function getMe(req, res) {
   try {
     const tenant = req.tenant;
@@ -284,5 +318,6 @@ module.exports = {
   registerCafe,
   loginCafe,
   firebaseAuthSync,
+  changePassword,
   getMe,
 };

@@ -112,7 +112,7 @@ async function listCafes(req, res) {
     const cafes = await prisma.tenant.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
-        devices: { select: { isOnline: true, selectedPrinter: true, lastSeenAt: true } },
+        devices: { select: { isOnline: true, selectedPrinter: true, bwPrinter: true, colorPrinter: true, lastSeenAt: true } },
         _count: { select: { printJobs: true } },
       },
     });
@@ -147,9 +147,34 @@ async function updateCafeStatus(req, res) {
   }
 }
 
+async function updateCafeName(req, res) {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, error: 'Shop / Cyber Cafe name is required' });
+    }
+
+    const updated = await prisma.tenant.update({
+      where: { id },
+      data: { name: name.trim() },
+    });
+
+    return res.json({
+      success: true,
+      message: `Shop name updated to "${updated.name}" successfully`,
+      cafe: { id: updated.id, name: updated.name },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Failed to update shop name', details: error.message });
+  }
+}
+
 module.exports = {
   adminLogin,
   getPlatformStats,
   listCafes,
   updateCafeStatus,
+  updateCafeName,
 };

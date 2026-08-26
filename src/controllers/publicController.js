@@ -5,6 +5,7 @@ const Razorpay = require('razorpay');
 const crypto = require('crypto');
 const prisma = require('../config/db');
 const { dispatchJobToAgent } = require('../services/socketService');
+const { decryptCredential } = require('../utils/cryptoUtil');
 
 // Ephemeral RAM Storage for zero-disk PDF streaming
 // Map(fileId -> { buffer, originalName, totalPages, expiresAt })
@@ -77,6 +78,9 @@ async function getCafePublicInfo(req, res) {
       return res.status(404).json({ success: false, error: 'Cyber Cafe not found' });
     }
 
+    const decryptedKeyId = tenant.razorpayKeyId ? (decryptCredential(tenant.razorpayKeyId) || '') : '';
+    const hasPaymentConfigured = !!(tenant.razorpayKeyId && tenant.razorpayKeySecret);
+
     return res.json({
       success: true,
       cafe: {
@@ -85,8 +89,8 @@ async function getCafePublicInfo(req, res) {
         slug: tenant.slug,
         bwPricePerPage: tenant.bwPricePerPage,
         colorPricePerPage: tenant.colorPricePerPage,
-        razorpayKeyId: tenant.razorpayKeyId || '',
-        hasPaymentConfigured: !!(tenant.razorpayKeyId && tenant.razorpayKeySecret),
+        razorpayKeyId: decryptedKeyId,
+        hasPaymentConfigured,
       },
     });
   } catch (error) {
@@ -188,13 +192,16 @@ async function createOrder(req, res) {
       });
     }
 
-    // Use Cafe's own Razorpay keys if fully configured; otherwise fall back to system Razorpay credentials
-    const rzpKeyId = (tenant.razorpayKeyId && tenant.razorpayKeySecret)
-      ? tenant.razorpayKeyId
+    // Decrypt Cafe's own Razorpay keys in memory if configured; otherwise fall back to system Razorpay credentials
+    const rawKeyId = tenant.razorpayKeyId ? decryptCredential(tenant.razorpayKeyId) : null;
+    const rawKeySecret = tenant.razorpayKeySecret ? decryptCredential(tenant.razorpayKeySecret) : null;
+
+    const rzpKeyId = (rawKeyId && rawKeySecret)
+      ? rawKeyId
       : (process.env.RAZORPAY_KEY_ID || 'rzp_live_TKRvuXkMviyVSX');
 
-    const rzpKeySecret = (tenant.razorpayKeyId && tenant.razorpayKeySecret)
-      ? tenant.razorpayKeySecret
+    const rzpKeySecret = (rawKeyId && rawKeySecret)
+      ? rawKeySecret
       : (process.env.RAZORPAY_KEY_SECRET || 'gRJ0aBC8WKivpAZ5cfXCmgcL');
 
     const maxPages = parseInt(totalPages, 10);
@@ -309,8 +316,9 @@ async function verifyPayment(req, res) {
     }
 
     const tenant = job.tenant;
-    const secretToUse = (tenant && tenant.razorpayKeyId && tenant.razorpayKeySecret)
-      ? tenant.razorpayKeySecret
+    const rawSecret = tenant?.razorpayKeySecret ? decryptCredential(tenant.razorpayKeySecret) : null;
+    const secretToUse = (tenant && tenant.razorpayKeyId && rawSecret)
+      ? rawSecret
       : (process.env.RAZORPAY_KEY_SECRET || 'gRJ0aBC8WKivpAZ5cfXCmgcL');
 
     const paymentRecord = await prisma.payment.findUnique({

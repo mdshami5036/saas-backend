@@ -1,6 +1,7 @@
 const prisma = require('../config/db');
 const { generateApiKey, generateAgentToken } = require('../utils/tokenGenerator');
 const { generateQRCodeDataURL, generateQRCodeSVG } = require('../utils/qrGenerator');
+const { encryptCredential, decryptCredential } = require('../utils/cryptoUtil');
 const path = require('path');
 const fs = require('fs');
 
@@ -45,6 +46,10 @@ async function getDashboardData(req, res) {
     const twoMinutesAgo = new Date(Date.now() - 120 * 1000);
     const isAgentOnline = devices.some((d) => d.isOnline && d.lastSeenAt && new Date(d.lastSeenAt) > twoMinutesAgo);
 
+    // Decrypt Key ID for the authenticated cafe user; secret is NEVER returned to client
+    const decryptedKeyId = tenant.razorpayKeyId ? (decryptCredential(tenant.razorpayKeyId) || '') : '';
+    const hasCustomRazorpay = !!(tenant.razorpayKeyId && tenant.razorpayKeySecret);
+
     return res.json({
       success: true,
       metrics: {
@@ -56,6 +61,8 @@ async function getDashboardData(req, res) {
       cafe: {
         id: tenant.id,
         name: tenant.name,
+        email: tenant.email,
+        phone: tenant.phone || '',
         slug: tenant.slug,
         websiteUrl: `${FRONTEND_URL}/cafe/${tenant.slug}`,
         backendApiUrl: `${BASE_SERVER_URL}/api/v1`,
@@ -64,8 +71,8 @@ async function getDashboardData(req, res) {
         bwPricePerPage: tenant.bwPricePerPage,
         colorPricePerPage: tenant.colorPricePerPage,
         qrCodeUrl: tenant.qrCodeUrl,
-        razorpayKeyId: tenant.razorpayKeyId || '',
-        hasCustomRazorpay: !!(tenant.razorpayKeyId && tenant.razorpayKeySecret),
+        razorpayKeyId: decryptedKeyId,
+        hasCustomRazorpay,
       },
       devices,
     });
@@ -78,12 +85,13 @@ async function getDashboardData(req, res) {
 async function updatePricing(req, res) {
   try {
     const tenant = req.tenant;
-    const { bwPricePerPage, colorPricePerPage, name } = req.body;
+    const { bwPricePerPage, colorPricePerPage, name, phone } = req.body;
 
     const updateData = {};
     if (bwPricePerPage !== undefined) updateData.bwPricePerPage = parseFloat(bwPricePerPage);
     if (colorPricePerPage !== undefined) updateData.colorPricePerPage = parseFloat(colorPricePerPage);
     if (name && name.trim()) updateData.name = name.trim();
+    if (phone !== undefined) updateData.phone = phone ? phone.trim() : null;
 
     const updated = await prisma.tenant.update({
       where: { id: tenant.id },
@@ -95,6 +103,8 @@ async function updatePricing(req, res) {
       message: 'Profile & pricing updated successfully',
       cafe: {
         name: updated.name,
+        email: updated.email,
+        phone: updated.phone,
         bwPricePerPage: updated.bwPricePerPage,
         colorPricePerPage: updated.colorPricePerPage,
       },
@@ -111,12 +121,15 @@ async function updateRazorpayCredentials(req, res) {
 
     const dataToUpdate = {};
 
+    // 🔒 Strictly encrypt Razorpay Key ID with AES-256-GCM before saving to database
     if (razorpayKeyId !== undefined && razorpayKeyId !== null) {
-      dataToUpdate.razorpayKeyId = razorpayKeyId.trim() || null;
+      const trimmed = razorpayKeyId.trim();
+      dataToUpdate.razorpayKeyId = trimmed ? encryptCredential(trimmed) : null;
     }
 
+    // 🔒 Strictly encrypt Razorpay Key Secret with AES-256-GCM before saving to database
     if (razorpayKeySecret !== undefined && razorpayKeySecret !== null && razorpayKeySecret.trim().length > 0) {
-      dataToUpdate.razorpayKeySecret = razorpayKeySecret.trim();
+      dataToUpdate.razorpayKeySecret = encryptCredential(razorpayKeySecret.trim());
     }
 
     const updated = await prisma.tenant.update({
@@ -124,130 +137,98 @@ async function updateRazorpayCredentials(req, res) {
       data: dataToUpdate,
     });
 
-    console.log(`[Razorpay Credentials] Successfully saved for Tenant ${updated.name} (${updated.id}): KeyID=${updated.razorpayKeyId}`);
+    console.log(`[Security Audit] Razorpay credentials securely encrypted with AES-256-GCM for tenant ${tenant.slug}`);
 
     return res.json({
       success: true,
-      message: 'Custom Razorpay Merchant Account connected successfully!',
-      razorpay: {
-        razorpayKeyId: updated.razorpayKeyId || '',
-        hasCustomRazorpay: !!(updated.razorpayKeyId && updated.razorpayKeySecret),
-      },
+      message: 'Razorpay credentials encrypted with 256-bit AES & stored securely in database',
+      hasCustomRazorpay: !!(updated.razorpayKeyId && updated.razorpayKeySecret),
     });
   } catch (error) {
-    console.error('Update Razorpay Error:', error);
-    return res.status(500).json({ success: false, error: 'Failed to update Razorpay credentials', details: error.message });
+    console.error('Update Razorpay error:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update Razorpay credentials' });
   }
 }
 
 async function regenerateKeys(req, res) {
   try {
     const tenant = req.tenant;
-    const { target } = req.body;
-
-    let dataToUpdate = {};
-    if (target === 'API_KEY') {
-      dataToUpdate.apiKey = generateApiKey();
-    } else if (target === 'AGENT_TOKEN') {
-      dataToUpdate.agentToken = generateAgentToken();
-    } else {
-      dataToUpdate.apiKey = generateApiKey();
-      dataToUpdate.agentToken = generateAgentToken();
-    }
+    const apiKey = generateApiKey();
+    const agentToken = generateAgentToken();
 
     const updated = await prisma.tenant.update({
       where: { id: tenant.id },
-      data: dataToUpdate,
+      data: { apiKey, agentToken },
     });
 
     return res.json({
       success: true,
-      message: 'Credentials regenerated successfully',
-      credentials: {
-        apiKey: updated.apiKey,
-        agentToken: updated.agentToken,
-      },
+      message: 'Credentials rotated successfully',
+      apiKey: updated.apiKey,
+      agentToken: updated.agentToken,
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Failed to regenerate credentials' });
+    return res.status(500).json({ success: false, error: 'Failed to rotate keys' });
   }
 }
 
 async function getJobsHistory(req, res) {
   try {
     const tenant = req.tenant;
-    const { page = 1, limit = 20, status } = req.query;
+    const limit = parseInt(req.query.limit) || 20;
 
-    const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
-    const where = { tenantId: tenant.id };
-
-    if (status) {
-      where.jobStatus = status;
-    }
-
-    const [jobs, total] = await Promise.all([
-      prisma.printJob.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: parseInt(limit, 10),
-        include: { payment: true },
-      }),
-      prisma.printJob.count({ where }),
-    ]);
-
-    return res.json({
-      success: true,
-      jobs,
-      pagination: {
-        page: parseInt(page, 10),
-        limit: parseInt(limit, 10),
-        total,
-        totalPages: Math.ceil(total / parseInt(limit, 10)),
+    const jobs = await prisma.printJob.findMany({
+      where: { tenantId: tenant.id },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: {
+        payment: { select: { status: true, amount: true } },
       },
     });
+
+    return res.json({ success: true, jobs });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Failed to fetch print jobs history' });
+    return res.status(500).json({ success: false, error: 'Failed to fetch jobs' });
   }
 }
 
 async function getQrCode(req, res) {
   try {
     const tenant = req.tenant;
-    const websiteUrl = `${FRONTEND_URL}/cafe/${tenant.slug}`;
     const format = req.query.format || 'png';
+    const websiteUrl = `${FRONTEND_URL}/cafe/${tenant.slug}`;
 
     if (format === 'svg') {
-      const svgString = await generateQRCodeSVG(websiteUrl);
+      const svg = await generateQRCodeSVG(websiteUrl);
       res.setHeader('Content-Type', 'image/svg+xml');
-      return res.send(svgString);
+      return res.send(svg);
     }
 
     const dataUrl = await generateQRCodeDataURL(websiteUrl);
     return res.json({ success: true, qrCodeUrl: dataUrl, websiteUrl });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Failed to generate QR Code' });
+    return res.status(500).json({ success: false, error: 'Failed to generate QR code' });
   }
 }
 
 async function downloadPreconfiguredAgent(req, res) {
   try {
-    const agentExePath = path.join(__dirname, '../../../print-agent/dist/PrintAgent.exe');
+    const tenant = req.tenant;
+    const agentDir = path.join(__dirname, '../../../print-agent');
+    const exePath = path.join(agentDir, 'dist', 'AutoPrintAgent.exe');
 
-    if (fs.existsSync(agentExePath)) {
-      res.setHeader('Content-Type', 'application/octet-stream');
-      res.setHeader('Content-Disposition', 'attachment; filename="PrintAgent.exe"');
-      return res.sendFile(path.resolve(agentExePath));
+    if (!fs.existsSync(exePath)) {
+      return res.status(404).json({
+        success: false,
+        error: 'Agent build not ready. Please download the standalone script.',
+      });
     }
 
-    // Direct download URL link response
-    return res.json({
-      success: true,
-      downloadUrl: `https://github.com/mdshami5036/saas/releases/download/v1.0.0/PrintAgent.exe`,
-      filename: 'PrintAgent.exe',
-    });
+    res.setHeader('Content-Disposition', `attachment; filename=AutoPrintAgent-${tenant.slug}.exe`);
+    res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
+    return res.sendFile(exePath);
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Agent download failed' });
+    return res.status(500).json({ success: false, error: 'Download failed' });
   }
 }
 
@@ -256,34 +237,54 @@ async function updateSelectedPrinter(req, res) {
     const tenant = req.tenant;
     const { selectedPrinter, bwPrinter, colorPrinter, deviceId } = req.body;
 
-    const device = await prisma.device.findFirst({
-      where: deviceId ? { id: deviceId, tenantId: tenant.id } : { tenantId: tenant.id },
-      orderBy: { lastSeenAt: 'desc' },
-    });
-
-    if (!device) {
-      return res.status(404).json({ success: false, error: 'No connected printer device found' });
+    if (!selectedPrinter && !bwPrinter && !colorPrinter) {
+      return res.status(400).json({ success: false, error: 'Printer name is required' });
     }
 
-    const updateData = {};
-    if (selectedPrinter !== undefined) updateData.selectedPrinter = selectedPrinter;
-    if (bwPrinter !== undefined) updateData.bwPrinter = bwPrinter;
-    if (colorPrinter !== undefined) updateData.colorPrinter = colorPrinter;
+    let targetDevice;
+    if (deviceId) {
+      targetDevice = await prisma.device.findFirst({
+        where: { id: deviceId, tenantId: tenant.id },
+      });
+    } else {
+      targetDevice = await prisma.device.findFirst({
+        where: { tenantId: tenant.id },
+        orderBy: { lastSeenAt: 'desc' },
+      });
+    }
 
-    const updatedDevice = await prisma.device.update({
-      where: { id: device.id },
-      data: updateData,
-    });
+    if (!targetDevice) {
+      targetDevice = await prisma.device.create({
+        data: {
+          tenantId: tenant.id,
+          name: 'Primary Counter PC',
+          isOnline: true,
+          selectedPrinter: selectedPrinter || bwPrinter || 'Default System Printer',
+          bwPrinter: bwPrinter || selectedPrinter || 'Default System Printer',
+          colorPrinter: colorPrinter || selectedPrinter || 'Default System Printer',
+          lastSeenAt: new Date(),
+        },
+      });
+    } else {
+      const updateData = {};
+      if (selectedPrinter) updateData.selectedPrinter = selectedPrinter;
+      if (bwPrinter) updateData.bwPrinter = bwPrinter;
+      if (colorPrinter) updateData.colorPrinter = colorPrinter;
+
+      targetDevice = await prisma.device.update({
+        where: { id: targetDevice.id },
+        data: updateData,
+      });
+    }
 
     return res.json({
       success: true,
-      message: `Hardware printer preferences updated successfully!`,
-      selectedPrinter: updatedDevice.selectedPrinter,
-      bwPrinter: updatedDevice.bwPrinter,
-      colorPrinter: updatedDevice.colorPrinter,
+      message: 'Printer routing configuration updated successfully',
+      device: targetDevice,
     });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Failed to update printer settings' });
+    console.error('Error updating printer:', error);
+    return res.status(500).json({ success: false, error: 'Failed to update printer setting' });
   }
 }
 
