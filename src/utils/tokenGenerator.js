@@ -4,8 +4,21 @@ function generateApiKey() {
   return 'pk_' + crypto.randomBytes(16).toString('hex');
 }
 
+// 6-digit unique numeric Print Agent Token (e.g. 748291)
 function generateAgentToken() {
-  return 'ag_' + crypto.randomBytes(16).toString('hex');
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+async function generateUniqueAgentToken(prisma) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const candidate = Math.floor(100000 + Math.random() * 900000).toString();
+    if (!prisma) return candidate;
+    const existing = await prisma.tenant.findUnique({ where: { agentToken: candidate } });
+    if (!existing) {
+      return candidate;
+    }
+  }
+  return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
 function generateSlug(name) {
@@ -26,6 +39,7 @@ function verifyHardwareHash(fingerprintString, expectedHash) {
 module.exports = {
   generateApiKey,
   generateAgentToken,
+  generateUniqueAgentToken,
   generateSlug,
   verifyHardwareHash,
 };

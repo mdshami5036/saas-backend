@@ -1,7 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../config/db');
-const { generateApiKey, generateAgentToken, generateSlug } = require('../utils/tokenGenerator');
+const { generateApiKey, generateAgentToken, generateUniqueAgentToken, generateSlug } = require('../utils/tokenGenerator');
 const { generateQRCodeDataURL } = require('../utils/qrGenerator');
 const { verifyFirebaseToken } = require('../config/firebaseAdmin');
 
@@ -45,7 +45,7 @@ async function registerCafe(req, res) {
     const passwordHash = await bcrypt.hash(password, 10);
     const slug = generateSlug(name);
     const apiKey = generateApiKey();
-    const agentToken = generateAgentToken();
+    const agentToken = await generateUniqueAgentToken(prisma);
     const websiteUrl = `${FRONTEND_URL}/cafe/${slug}`;
     const qrCodeUrl = await generateQRCodeDataURL(websiteUrl);
 

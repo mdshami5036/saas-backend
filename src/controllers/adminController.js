@@ -171,10 +171,43 @@ async function updateCafeName(req, res) {
   }
 }
 
+async function migrateTokensToSixDigits(req, res) {
+  try {
+    const tenants = await prisma.tenant.findMany();
+    const updatedList = [];
+    for (const tenant of tenants) {
+      if (!tenant.agentToken || !/^\d{6}$/.test(tenant.agentToken)) {
+        let newDigitToken = '';
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const candidate = Math.floor(100000 + Math.random() * 900000).toString();
+          const exists = await prisma.tenant.findUnique({ where: { agentToken: candidate } });
+          if (!exists) {
+            newDigitToken = candidate;
+            break;
+          }
+        }
+        if (newDigitToken) {
+          const updated = await prisma.tenant.update({
+            where: { id: tenant.id },
+            data: { agentToken: newDigitToken },
+          });
+          updatedList.push({ id: updated.id, name: updated.name, email: updated.email, agentToken: updated.agentToken });
+        }
+      } else {
+        updatedList.push({ id: tenant.id, name: tenant.name, email: tenant.email, agentToken: tenant.agentToken });
+      }
+    }
+    return res.json({ success: true, message: 'All tokens migrated to unique 6-digit numbers', total: updatedList.length, tenants: updatedList });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Migration failed', details: error.message });
+  }
+}
+
 module.exports = {
   adminLogin,
   getPlatformStats,
   listCafes,
   updateCafeStatus,
   updateCafeName,
+  migrateTokensToSixDigits,
 };

@@ -72,6 +72,37 @@ if (process.env.DATABASE_URL && (process.env.DATABASE_URL.startsWith('postgres:/
   });
 }
 
+// Automatically migrate all tenants to unique 6-digit numeric agentTokens
+async function migrateAllTokensTo6Digits() {
+  try {
+    const prisma = require('./config/db');
+    const tenants = await prisma.tenant.findMany();
+    for (const tenant of tenants) {
+      if (!tenant.agentToken || !/^\d{6}$/.test(tenant.agentToken)) {
+        let newDigitToken = '';
+        for (let attempt = 0; attempt < 100; attempt++) {
+          const candidate = Math.floor(100000 + Math.random() * 900000).toString();
+          const exists = await prisma.tenant.findUnique({ where: { agentToken: candidate } });
+          if (!exists) {
+            newDigitToken = candidate;
+            break;
+          }
+        }
+        if (newDigitToken) {
+          await prisma.tenant.update({
+            where: { id: tenant.id },
+            data: { agentToken: newDigitToken },
+          });
+          console.log(`[Token Migration]: Updated ${tenant.name} (${tenant.email}) to 6-digit token: ${newDigitToken}`);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[Token Migration Warning]:', e.message);
+  }
+}
+setTimeout(migrateAllTokensTo6Digits, 3000);
+
 server.listen(PORT, () => {
   console.log(`========================================================`);
   console.log(`🚀 Auto Print Backend API running on port ${PORT}`);

@@ -50,6 +50,25 @@ async function getDashboardData(req, res) {
     const decryptedKeyId = tenant.razorpayKeyId ? (decryptCredential(tenant.razorpayKeyId) || '') : '';
     const hasCustomRazorpay = !!(tenant.razorpayKeyId && tenant.razorpayKeySecret);
 
+    // Ensure agentToken is always a unique 6-digit numeric token
+    let currentAgentToken = tenant.agentToken;
+    if (!currentAgentToken || !/^\d{6}$/.test(currentAgentToken)) {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const candidate = Math.floor(100000 + Math.random() * 900000).toString();
+        const exists = await prisma.tenant.findUnique({ where: { agentToken: candidate } });
+        if (!exists) {
+          currentAgentToken = candidate;
+          break;
+        }
+      }
+      if (currentAgentToken && /^\d{6}$/.test(currentAgentToken)) {
+        await prisma.tenant.update({
+          where: { id: tenant.id },
+          data: { agentToken: currentAgentToken },
+        });
+      }
+    }
+
     return res.json({
       success: true,
       metrics: {
@@ -67,7 +86,7 @@ async function getDashboardData(req, res) {
         websiteUrl: `${FRONTEND_URL}/cafe/${tenant.slug}`,
         backendApiUrl: `${BASE_SERVER_URL}/api/v1`,
         apiKey: tenant.apiKey,
-        agentToken: tenant.agentToken,
+        agentToken: currentAgentToken || tenant.agentToken,
         bwPricePerPage: tenant.bwPricePerPage,
         colorPricePerPage: tenant.colorPricePerPage,
         qrCodeUrl: tenant.qrCodeUrl,
