@@ -147,32 +147,48 @@ async function downloadJobFile(req, res) {
       return res.status(404).json({ success: false, error: 'Print job not found' });
     }
 
-    // 1. Check zero-storage RAM memory buffer first
+    // 1. Fetch raw PDF buffer from RAM or persistent temp disk
+    let rawBuffer = null;
     const publicCtrl = require('./publicController');
     const memoryRecord = publicCtrl.getMemoryPdfBuffer(job.pdfFileName);
 
     if (memoryRecord && memoryRecord.buffer) {
-      res.contentType('application/pdf');
-      return res.send(memoryRecord.buffer);
-    }
+      rawBuffer = memoryRecord.buffer;
+    } else {
+      const cleanId = (job.pdfFileName || '').replace(/\.pdf$/i, '');
+      const diskPaths = [
+        path.join(__dirname, '../../uploads/temp_pdf', `${cleanId}.pdf`),
+        path.join(__dirname, '../../uploads/temp_pdf', cleanId),
+        job.pdfPath
+      ].filter(Boolean);
 
-    const cleanId = (job.pdfFileName || '').replace(/\.pdf$/i, '');
-
-    // 2. Check temp_pdf persistent disk location variations
-    const diskPaths = [
-      path.join(__dirname, '../../uploads/temp_pdf', `${cleanId}.pdf`),
-      path.join(__dirname, '../../uploads/temp_pdf', cleanId),
-      job.pdfPath
-    ].filter(Boolean);
-
-    for (const dPath of diskPaths) {
-      if (fs.existsSync(dPath)) {
-        res.contentType('application/pdf');
-        return res.sendFile(path.resolve(dPath));
+      for (const dPath of diskPaths) {
+        if (fs.existsSync(dPath)) {
+          try {
+            rawBuffer = fs.readFileSync(dPath);
+            break;
+          } catch (e) {}
+        }
       }
     }
 
-    return res.status(404).json({ success: false, error: 'PDF file expired or unavailable' });
+    if (!rawBuffer) {
+      return res.status(404).json({ success: false, error: 'PDF file expired or unavailable' });
+    }
+
+    // 2. CRITICAL FIX: Slicing PDF to ONLY the customer's selected pages (e.g. page 1 of 3)
+    let finalBuffer = rawBuffer;
+    if (job.pagesToPrint && job.pagesToPrint.toString().toUpperCase() !== 'ALL') {
+      try {
+        const { extractPagesFromPdf } = require('../utils/pdfSlicer');
+        finalBuffer = await extractPagesFromPdf(rawBuffer, job.pagesToPrint, job.totalPages || 1000);
+      } catch (sliceErr) {
+        console.warn('[PDF Slicing Warning]:', sliceErr.message);
+      }
+    }
+
+    res.contentType('application/pdf');
+    return res.send(finalBuffer);
   } catch (error) {
     return res.status(500).json({ success: false, error: 'File download error' });
   }
