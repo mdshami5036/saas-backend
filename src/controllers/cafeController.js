@@ -224,7 +224,7 @@ async function downloadPreconfiguredAgent(req, res) {
       });
     }
 
-    res.setHeader('Content-Disposition', `attachment; filename=AutoPrintAgent-${tenant.slug}.exe`);
+    res.setHeader('Content-Disposition', `attachment; filename=WevePrint-Agent-${tenant.slug}.exe`);
     res.setHeader('Content-Type', 'application/vnd.microsoft.portable-executable');
     return res.sendFile(exePath);
   } catch (error) {
