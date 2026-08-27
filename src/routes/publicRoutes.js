@@ -10,6 +10,8 @@ const {
   verifyPayment,
   serveMemoryPdfFile,
   getJobStatus,
+  getReviews,
+  submitReview,
 } = require('../controllers/publicController');
 
 // Multer configured strictly for IN-MEMORY STORAGE (Zero Disk Storage)
@@ -35,5 +37,9 @@ router.post('/create-order', resolveTenantBySlug, createOrder);
 router.post('/verify-payment', verifyPayment);
 router.get('/files/:fileId', serveMemoryPdfFile);
 router.get('/jobs/:id/status', getJobStatus);
+
+// Real-Time Verified Reviews (Auto Print System & Web Tools)
+router.get('/reviews', getReviews);
+router.post('/reviews', submitReview);
 
 module.exports = router;

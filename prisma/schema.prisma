@@ -106,3 +106,17 @@ model Payment {
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   printJob PrintJob @relation(fields: [printJobId], references: [id], onDelete: Cascade)
 }
+
+model Review {
+  id         String   @id @default(uuid())
+  name       String
+  email      String   @unique
+  rating     Int      @default(5)
+  category   String   @default("AUTO_PRINT") // "AUTO_PRINT" | "TOOLS"
+  toolName   String?
+  headline   String?
+  comment    String
+  isApproved Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}

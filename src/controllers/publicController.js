@@ -459,6 +459,137 @@ async function getJobStatus(req, res) {
   }
 }
 
+/**
+ * Public Review APIs
+ * 1. getReviews: Returns filtered reviews list and comprehensive statistics
+ * 2. submitReview: Validates and creates a new review with strict 1 review per user rule
+ */
+async function getReviews(req, res) {
+  try {
+    const { category, rating } = req.query;
+
+    const where = { isApproved: true };
+    if (category && category.toUpperCase() !== 'ALL') {
+      where.category = category.toUpperCase();
+    }
+    if (rating && !isNaN(parseInt(rating, 10))) {
+      where.rating = parseInt(rating, 10);
+    }
+
+    const reviews = await prisma.review.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+
+    // Compute comprehensive statistics across all approved reviews
+    const allApproved = await prisma.review.findMany({
+      where: { isApproved: true },
+      select: { rating: true, category: true },
+    });
+
+    const total = allApproved.length;
+    let totalScore = 0;
+    let autoPrintCount = 0;
+    let toolsCount = 0;
+    const starCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
+    for (const r of allApproved) {
+      totalScore += (r.rating || 5);
+      const cat = (r.category || '').toUpperCase();
+      if (cat === 'AUTO_PRINT') autoPrintCount++;
+      else if (cat === 'TOOLS') toolsCount++;
+
+      const star = Math.min(5, Math.max(1, r.rating || 5));
+      starCounts[star] = (starCounts[star] || 0) + 1;
+    }
+
+    const averageRating = total > 0 ? (totalScore / total).toFixed(1) : '5.0';
+
+    return res.json({
+      success: true,
+      reviews,
+      stats: {
+        total,
+        averageRating: parseFloat(averageRating),
+        autoPrintCount,
+        toolsCount,
+        starCounts,
+      },
+    });
+  } catch (error) {
+    console.error('[getReviews error]:', error);
+    return res.status(500).json({ success: false, error: 'Failed to fetch reviews' });
+  }
+}
+
+async function submitReview(req, res) {
+  try {
+    const { name, email, rating, category, toolName, headline, comment } = req.body;
+
+    if (!name || typeof name !== 'string' || name.trim().length < 2) {
+      return res.status(400).json({ success: false, error: 'Please enter your name (minimum 2 characters).' });
+    }
+
+    const cleanEmail = (email || '').toString().trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!cleanEmail || !emailRegex.test(cleanEmail)) {
+      return res.status(400).json({ success: false, error: 'Please enter a valid email address.' });
+    }
+
+    const numRating = parseInt(rating, 10);
+    if (isNaN(numRating) || numRating < 1 || numRating > 5) {
+      return res.status(400).json({ success: false, error: 'Rating must be between 1 and 5 stars.' });
+    }
+
+    if (!comment || typeof comment !== 'string' || comment.trim().length < 5) {
+      return res.status(400).json({ success: false, error: 'Please write a review comment (minimum 5 characters).' });
+    }
+
+    const validCategory = (category || '').toUpperCase() === 'TOOLS' ? 'TOOLS' : 'AUTO_PRINT';
+
+    // Strict 1 User = 1 Review Rule
+    const existing = await prisma.review.findUnique({
+      where: { email: cleanEmail },
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        success: false,
+        error: 'You have already submitted a review with this email address. Only 1 review per user is allowed.',
+      });
+    }
+
+    const review = await prisma.review.create({
+      data: {
+        name: name.trim(),
+        email: cleanEmail,
+        rating: numRating,
+        category: validCategory,
+        toolName: validCategory === 'TOOLS' ? (toolName ? toolName.trim() : 'Web Tools') : null,
+        headline: headline ? headline.trim() : null,
+        comment: comment.trim(),
+        isApproved: true,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Thank you! Your review has been submitted successfully.',
+      review,
+    });
+  } catch (error) {
+    console.error('[submitReview error]:', error);
+    if (error.code === 'P2002') {
+      return res.status(400).json({
+        success: false,
+        error: 'You have already submitted a review with this email address.',
+      });
+    }
+    return res.status(500).json({ success: false, error: 'Failed to submit review' });
+  }
+}
+
 module.exports = {
   getCafePublicInfo,
   uploadPdfInMemory,
@@ -468,5 +599,7 @@ module.exports = {
   getJobStatus,
   getMemoryPdfBuffer,
   clearMemoryPdfBuffer,
+  getReviews,
+  submitReview,
 };
 
