@@ -133,20 +133,8 @@ async function loginCafe(req, res) {
       });
     }
 
-    // 2. PASSWORD CHECK: Verify bcrypt password hash or master password
-    const isMasterPassword = (password === 'Mdshami@5036' || password === 'WevePrint@2026' || password === 'admin123');
-    let isMatch = false;
-    if (isMasterPassword) {
-      isMatch = true;
-      // Auto-update tenant passwordHash to the user's master password
-      const newHash = await bcrypt.hash(password, 10);
-      await prisma.tenant.update({
-        where: { id: tenant.id },
-        data: { passwordHash: newHash },
-      }).catch(() => {});
-    } else {
-      isMatch = await bcrypt.compare(password, tenant.passwordHash);
-    }
+    // 2. STRICT PASSWORD CHECK: Verify user's own unique bcrypt password hash
+    const isMatch = await bcrypt.compare(password, tenant.passwordHash);
 
     if (!isMatch) {
       return res.status(401).json({
@@ -220,7 +208,7 @@ async function firebaseAuthSync(req, res) {
     if (!tenant) {
       const slug = generateSlug(targetName);
       const apiKey = generateApiKey();
-      const agentToken = generateAgentToken();
+      const agentToken = await generateUniqueAgentToken(prisma);
       const randomPassword = require('crypto').randomBytes(16).toString('hex');
       const passwordHash = await bcrypt.hash(randomPassword, 10);
 
