@@ -8,6 +8,7 @@ const {
   updateCafeStatus,
   updateCafeName,
   migrateTokensToSixDigits,
+  deleteReview,
 } = require('../controllers/adminController');
 
 router.post('/login', adminLogin);
@@ -16,5 +17,6 @@ router.get('/cafes', authenticateAdmin, listCafes);
 router.patch('/cafes/:id/status', authenticateAdmin, updateCafeStatus);
 router.patch('/cafes/:id/name', authenticateAdmin, updateCafeName);
 router.post('/migrate-tokens', authenticateAdmin, migrateTokensToSixDigits);
+router.delete('/reviews/:id', authenticateAdmin, deleteReview);
 
 module.exports = router;

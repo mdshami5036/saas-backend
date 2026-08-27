@@ -203,6 +203,20 @@ async function migrateTokensToSixDigits(req, res) {
   }
 }
 
+async function deleteReview(req, res) {
+  try {
+    const { id } = req.params;
+    if (id === 'all-test') {
+      await prisma.review.deleteMany({ where: { email: { contains: 'test' } } });
+      return res.json({ success: true, message: 'Test reviews cleared' });
+    }
+    await prisma.review.delete({ where: { id } });
+    return res.json({ success: true, message: 'Review deleted successfully' });
+  } catch (error) {
+    return res.status(500).json({ success: false, error: 'Failed to delete review', details: error.message });
+  }
+}
+
 module.exports = {
   adminLogin,
   getPlatformStats,
@@ -210,4 +224,5 @@ module.exports = {
   updateCafeStatus,
   updateCafeName,
   migrateTokensToSixDigits,
+  deleteReview,
 };
